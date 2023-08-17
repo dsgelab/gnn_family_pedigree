@@ -40,25 +40,16 @@ def get_model_output(model, data_batch, params):
         model_output: dictionary containing output layers
         y: true output
     """
-    if params['use_edge'==True]:
-        x_static_graph          = data_batch.x.to(params['device'])
-        y                       = data_batch.y.unsqueeze(1).to(params['device'])
-        edge_index              = data_batch.edge_index.to(params['device'])
-        edge_weight             = data_batch.edge_attr.to(params['device'])
-        batch                   = data_batch.batch.to(params['device'])
-        target_index            = data_batch.target_index.to(params['device'])
-        
-        output = model(x_static_graph, edge_index, edge_weight, batch, target_index)
-        model_output = {'output':output}
-        
-    elif params['use_edge'==False]:
-        x_static_graph          = data_batch.x.to(params['device'])
-        y                       = data_batch.y.unsqueeze(1).to(params['device'])
-        batch                   = data_batch.batch.to(params['device'])
-        target_index            = data_batch.target_index.to(params['device'])
-        
-        output = model(x_static_graph, None, None, batch, target_index)
-        model_output = {'output':output}
+    
+    x_static_graph          = data_batch.x.to(params['device'])
+    y                       = data_batch.y.unsqueeze(1).to(params['device'])
+    edge_index              = data_batch.edge_index.to(params['device'])
+    edge_weight             = data_batch.edge_attr.to(params['device'])
+    batch                   = data_batch.batch.to(params['device'])
+    target_index            = data_batch.target_index.to(params['device'])
+    
+    output = model(x_static_graph, edge_index, edge_weight, batch, target_index)
+    model_output = {'output':output}
 
     return model_output, y
 
