@@ -3,7 +3,7 @@ import pandas as pd
 import gc
 
 PROJECT_PATH   = "/data/projects/project_GNN/gnn_family_pedigree/"
-RELATIVES_PATH = "/data/projects/project_SophieAndZhiyu/Relatives/family_relationships.csv"
+RELATIVES_PATH = "/data/projects/project_SophieAndZhiyu/Relatives/family_relationships.wMarrigeChild"
 STATFILE_PATH  = PROJECT_PATH + "data/statfile.csv"
 
 # fetch data
