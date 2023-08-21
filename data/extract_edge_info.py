@@ -2,7 +2,7 @@
 import pandas as pd
 import gc
 
-PROJECT_PATH   = "/data/projects/project_GNN/age_prediction/"
+PROJECT_PATH   = "/data/projects/project_GNN/gnn_family_pedigree/"
 RELATIVES_PATH = "/data/projects/project_SophieAndZhiyu/Relatives/family_relationships.csv"
 STATFILE_PATH  = PROJECT_PATH + "data/statfile.csv"
 
@@ -18,6 +18,8 @@ df = df[df.completeness != 'unknown'].reset_index(drop=True)
 WEIGHT_MAP = {
     'parent_na':0.5, 
     'sibling_full':0.5, 
+    'offspring_na':0.5,
+    'spouse_na':0.3,
     'grandparent_na':0.25, 
     'aunt_or_uncle_full':0.25, 
     'cousin_full':0.125, 
