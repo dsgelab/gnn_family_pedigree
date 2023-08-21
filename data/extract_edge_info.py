@@ -9,7 +9,11 @@ STATFILE_PATH  = PROJECT_PATH + "data/statfile.csv"
 # fetch data
 df = pd.read_csv(RELATIVES_PATH)
 statfile = pd.read_csv(STATFILE_PATH)
-graph = statfile[statfile['graph']==1]['FINREGISTRYID'].tolist()
+
+# remove non graph patients
+to_remove = statfile[statfile.graph==0]['FINREGISTRYID'].tolist()
+df = df.loc[~(df.ID1.isin(to_remove))].reset_index(drop=True)
+df = df.loc[~(df.ID2.isin(to_remove))].reset_index(drop=True)
 
 # drop ambiguous relatives
 df = df[df.completeness != 'unknown'].reset_index(drop=True)
