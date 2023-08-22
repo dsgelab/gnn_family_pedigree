@@ -52,21 +52,6 @@ class EarlyStopping:
         self.val_loss_min = val_loss
 
 
-class WeightedBCELoss(torch.nn.Module):
-    def __init__(self, num_samples_dataset, num_samples_minority_class, num_samples_majority_class, device):
-        super(WeightedBCELoss,self).__init__()
-        self.num_samples_dataset = num_samples_dataset
-        self.num_samples_minority_class = num_samples_minority_class
-        self.num_samples_majority_class = num_samples_majority_class
-        self.device = device
-    def forward(self, y_est, y):
-        weight_minority = self.num_samples_dataset / self.num_samples_minority_class
-        weight_majority = self.num_samples_dataset / self.num_samples_majority_class
-        class_weights = torch.tensor([[weight_minority] if i==1 else [weight_majority] for i in y]).to(self.device)
-        bce_loss = torch.nn.BCELoss(weight=class_weights)
-        weighted_bce_loss = bce_loss(y_est, y)
-        return weighted_bce_loss
-
 def get_classification_threshold_auc(y_pred, y_actual):
     """For imbalanced classification we compute an optimal threshold using roc curve, 
     based on results for validation data
