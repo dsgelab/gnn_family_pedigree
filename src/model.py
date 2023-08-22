@@ -8,8 +8,6 @@ class GNN(torch.nn.Module):
     def __init__(self, num_features_static_graph, hidden_dim, gnn_layer, pooling_method, dropout_rate, ratio):
         super().__init__()
         self.pooling_method = pooling_method
-        self.static_linear1 = nn.Linear(num_features_static_graph, hidden_dim)
-        self.static_linear2 = nn.Linear(hidden_dim, hidden_dim)
 
         # which gnn layer to use is specified by input argument
         if gnn_layer=='gcn':
@@ -27,11 +25,9 @@ class GNN(torch.nn.Module):
 
         self.pre_final_linear = nn.Linear(hidden_dim,hidden_dim)
         self.final_linear = nn.Linear(hidden_dim, 1)
+        
         self.relu = nn.ReLU()
         self.sigmoid = nn.Sigmoid()
-
-        self.TopKpool = gnn.TopKPooling(hidden_dim, ratio=ratio)
-        self.SAGpool = gnn.SAGPooling(hidden_dim, ratio=ratio)
         self.dropout = nn.Dropout(dropout_rate)
         
     def forward(self, x_static_graph, edge_index, edge_weight, batch, target_index):
