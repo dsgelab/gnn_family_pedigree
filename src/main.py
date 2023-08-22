@@ -24,7 +24,7 @@ from sklearn.linear_model import LogisticRegression
 # IMPORT USER-DEFINED FUNCTIONS
 from data import DataFetch, GraphData, get_batch_and_loader
 from model import GNN
-from utils import EarlyStopping, WeightedBCELoss, get_classification_threshold_auc, get_classification_threshold_precision_recall, brier_skill_score, calculate_metrics, enable_dropout, plot_losses
+from utils import EarlyStopping, get_classification_threshold_auc, get_classification_threshold_precision_recall, brier_skill_score, calculate_metrics, enable_dropout, plot_losses
 
 # DEFINE EXTRA FUNCTIONS
 
@@ -32,7 +32,7 @@ def get_model_output(model, data_batch, params):
     """Take an initialized model and return its ouput layer
 
     Args:
-        model: initialized model object to use
+        model: initialized GNN model object to use
         data_batch (torch_geometric.data.Dataset): data batch to use
         params: user requests, loaded using argparser
 
@@ -47,7 +47,9 @@ def get_model_output(model, data_batch, params):
     edge_weight             = data_batch.edge_attr.to(params['device'])
     batch                   = data_batch.batch.to(params['device'])
     target_index            = data_batch.target_index.to(params['device'])
-    
+
+
+    # look in forward() in model.py for model architecture
     output = model(x_static_graph, edge_index, edge_weight, batch, target_index)
     model_output = {'output':output}
 
@@ -81,14 +83,14 @@ def train_model(model, train_loader, validate_loader, params):
     model_path = '{}/checkpoint_{}.pt'.format(params['outpath'], params['outname'])
     early_stopping = EarlyStopping(patience=params['patience'], path=model_path)
 
-    if params['loss']=='bce_weighted_single' or params['loss']=='bce_weighted_sum':
-        print("Using BCE weighted loss")
-        train_criterion = WeightedBCELoss(params['num_samples_train_dataset'], params['num_samples_train_minority_class'], params['num_samples_train_majority_class'], params['device'])
-        valid_criterion = WeightedBCELoss(params['num_samples_valid_dataset'], params['num_samples_valid_minority_class'], params['num_samples_valid_majority_class'], params['device'])
+    if params['loss']=='bce':
+        train_criterion = torch.nn.BCELoss(reduction='sum')   
+        valid_criterion = torch.nn.BCELoss(reduction='sum')
     elif params['loss']=='mse':
         train_criterion = torch.nn.MSELoss(reduction='sum')      
         valid_criterion = torch.nn.MSELoss(reduction='sum')
-        optimizer = torch.optim.Adam(model.parameters(), lr=params['learning_rate'])
+    
+    optimizer = torch.optim.Adam(model.parameters(), lr=params['learning_rate'])
 
     train_losses = []
     valid_losses = []
@@ -110,17 +112,11 @@ def train_model(model, train_loader, validate_loader, params):
         for train_batch in tqdm(train_loader, total=params['num_batches_train']):
             output, y = get_model_output(model, train_batch, params)
 
-            if params['loss']=='bce_weighted_sum':
-                # combined loss that considers the additive effect of patient and family effects
-                loss_term_NN     = params['gamma'] * train_criterion(output['output'], y) 
-                separate_loss_terms_epoch['NN_train'].append(loss_term_NN.item()) 
-                loss = loss_term_NN 
-            else:
-                loss = train_criterion(output['output'], y) 
-
+            loss = train_criterion(output['output'], y) 
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
+
             epoch_train_loss.append(loss.item())
         
         # evaluate on validation set
@@ -128,19 +124,11 @@ def train_model(model, train_loader, validate_loader, params):
         epoch_valid_loss = []
         for validate_batch in tqdm(validate_loader, total=params['num_batches_validate']):
             output, y = get_model_output(model, validate_batch, params)
-            valid_output = np.concatenate((valid_output, output['output'].reshape(-1).detach().cpu().numpy()))
-            valid_y = np.concatenate((valid_y, y.reshape(-1).detach().cpu().numpy()))
 
-            if params['loss']=='bce_weighted_sum':
-                # combined loss that considers the additive effect of patient and family effects
-                loss_term_NN = params['gamma'] * valid_criterion(output['output'], y) 
-                separate_loss_terms_epoch['NN_valid'].append(loss_term_NN.item())
-                loss = loss_term_NN 
-            else:
-                loss = valid_criterion(output['output'], y) 
-
+            loss = valid_criterion(output['output'], y) 
             epoch_valid_loss.append(loss.item())
 
+        # check if early stopping       
         early_stopping(np.mean(epoch_valid_loss), model)
         if early_stopping.early_stop:
             print("Early stopping")
@@ -168,16 +156,16 @@ def train_model(model, train_loader, validate_loader, params):
     
     return model, threshold
 
-def test_model(model, test_loader, threshold, params, embeddings=False):
+def test_model(model, test_loader, threshold, params):
+
     num_samples = 3 # number of MC samples
-    if embeddings: num_samples = 1
     test_output = [np.array([]) for _ in range(num_samples)]
     test_y = [np.array([]) for _ in range(num_samples)]
 
     representations = pd.DataFrame()
-
     model.eval()
     enable_dropout(model)
+
     for sample in range(num_samples):
         counter = 0
         for test_batch in tqdm(test_loader, total=params['num_batches_test']):
@@ -194,9 +182,13 @@ def test_model(model, test_loader, threshold, params, embeddings=False):
     test_y = np.array(test_y).mean(axis=0)
     results = pd.DataFrame({'actual':test_y, 'pred_raw':test_output, 'pred_raw_se':test_output_se})
 
-    mse = metrics.mean_squared_error(test_y, test_output)
-    r2 = metrics.r2_score(test_y, test_output)
-    metric_results = {'MSE':mse,'R2':r2}
+    if params['loss']=='bce':
+        test_output_binary = (test_output>threshold).astype(int)
+        metric_results = calculate_metrics(test_y, test_output_binary, test_output)
+    elif params['loss']=='mse':
+        mse = metrics.mean_squared_error(test_y, test_output)
+        r2 = metrics.r2_score(test_y, test_output)
+        metric_results = {'MSE':mse,'R2':r2}
 
     return results, metric_results
 
@@ -213,7 +205,7 @@ if __name__ == "__main__":
     # the following can optionally be configured for each experiment
     parser.add_argument('--outpath', type=str, help='directory for results output', default='results')
     parser.add_argument('--statfile', type=str, help='filepath for statfile csv', default='data/statfile.csv')
-    parser.add_argument('--mask_target', type=str, help='mask target patient info', default='data/statfile.csv')
+    parser.add_argument('--mask_target', type=str, help='mask target patient info', default=True)
     parser.add_argument('--maskfile', type=str, help='filepath for maskfile csv', default='True')
     parser.add_argument('--edgefile', type=str, help='filepath for edgefile csv', default='data/edgefile.csv')
     parser.add_argument('--gnn_layer', type=str, help='type of gnn layer to use: gcn, graphconv, gat', default='graphconv')
@@ -236,7 +228,6 @@ if __name__ == "__main__":
     # extra parameters used for experiments presented in paper - in general these can be ignored
     parser.add_argument('--num_positive_samples', type=int, help='number of case samples from test set used in explainability analysis', default=5000)
     parser.add_argument('--explainability_mode', action='store_true', help='explainability flag for running the post-training analysis')
-    parser.add_argument('--embeddings_mode', action='store_true', help='extract the representations learned by the GNN')
     parser.add_argument('--explainer_input', type=str, help='optional explainability input file')
     parser.add_argument('--device', type=str, help='specific device to use, e.g. cuda:1, if not given detects gpu or cpu automatically', default='na')
 
@@ -268,7 +259,6 @@ if __name__ == "__main__":
             'threshold_opt':args['threshold_opt'], 
             'ratio':args['ratio'], 
             'explainability_mode':args['explainability_mode'], 
-            'embeddings_mode':args['embeddings_mode'], 
             'explainer_input':args['explainer_input'],
             'device_specification':args['device'],
             'num_positive_samples':args['num_positive_samples']}
@@ -284,19 +274,15 @@ if __name__ == "__main__":
         featfile=filepaths['featfile'], 
         statfile=filepaths['statfile'], 
         edgefile=filepaths['edgefile'], 
-        params=params,)
+        params=params)
     
     train_patient_list = fetch_data.train_patient_list
     params['num_batches_train'] = int(np.ceil(len(train_patient_list)/params['batchsize']))
     params['num_samples_train_dataset'] = len(fetch_data.train_patient_list)
-    params['num_samples_train_minority_class'] = fetch_data.num_samples_train_minority_class
-    params['num_samples_train_majority_class'] = fetch_data.num_samples_train_majority_class
 
     validate_patient_list = fetch_data.validate_patient_list
     params['num_batches_validate'] = int(np.ceil(len(validate_patient_list)/params['batchsize']))
     params['num_samples_valid_dataset'] = len(fetch_data.validate_patient_list)
-    params['num_samples_valid_minority_class'] = fetch_data.num_samples_valid_minority_class
-    params['num_samples_valid_majority_class'] = fetch_data.num_samples_valid_majority_class
 
     test_patient_list = fetch_data.test_patient_list
     params['num_batches_test'] = int(np.ceil(len(test_patient_list)/params['batchsize']))
@@ -341,30 +327,6 @@ if __name__ == "__main__":
         model.to(params['device'])
         torch.backends.cudnn.enabled = False
         explainability.gnn_explainer(model, exp_loader, exp_patient_list, params)
-    
-    elif params['embeddings_mode']:
-        # use same samples used for explainability
-        exp_data = pd.read_csv(params['explainer_input'])
-        exp_patient_list = torch.tensor([int(e) for e in list(exp_data['target_id'].unique())])
-        exp_dataset, exp_loader = get_batch_and_loader(exp_patient_list, fetch_data, params, shuffle=False)
-        params['num_batches_test'] = int(np.ceil(len(exp_patient_list)/params['batchsize']))
-        
-        # free up memory no longer needed
-        del fetch_data 
-        del train_dataset
-        del validate_dataset
-        del test_dataset
-        del exp_data
-
-        print("Loading model")
-        model.load_state_dict(torch.load(model_path))
-        model.combined_conv2.register_forward_hook(get_activation('combined_conv2'))
-        model.to(params['device'])
-
-        stats = pd.read_csv(stats_path)
-        stats_dict = dict(zip(stats['name'],stats['value']))
-        threshold = float(stats_dict['threshold'])
-        results, metric_results = test_model(model, exp_loader, threshold, params, embeddings=True)
         
     else:
         # normal training model
@@ -375,12 +337,12 @@ if __name__ == "__main__":
         del test_dataset
 
         # model training
-        start_time_train = time.time()
+        START = time.time()
         model, threshold = train_model(model, train_loader, validate_loader, params)
-        end_time_train = time.time()
         torch.save(model.state_dict(), model_path)
+        END = time.time()
         params['threshold'] = threshold
-        params['training_time'] = end_time_train - start_time_train
+        params['training_time'] = (END-START)/60
 
         # model testing
         results, metric_results = test_model(model, test_loader, threshold, params)
