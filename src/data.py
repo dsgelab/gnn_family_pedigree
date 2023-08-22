@@ -17,11 +17,8 @@ from random import choices
 class DataFetch():
     """Class for fetching patient data
 
-    Expects a tensor list of patients encoded using the node_ids
+    Expects a list of patients encoded using the node_ids
 
-    Assumes maskfile, statfile rows are indexed in order of these node_ids (0, 1, ... num_samples)
-    and they include data for both the target and graph samples (retrieve data using .iloc)
-    
     The edgefile only needs to include data for the target samples, and is indexed
     using the node_ids (retrieve data using .loc)
 
@@ -29,13 +26,20 @@ class DataFetch():
     Note: if the input is a directed graph the code converts it to an undirected graph
 
     Args:
-        maskfile, featfile, statfile and edgefile are filepaths to csv files
-        sqlpath is the path to the sql database
-    """
+        maskfile, featfile, statfile and edgefile (str): filepaths to respective csv files
+        params (list): contains all the parameter specification used in the project
+        patient_list (torch.tensor):
+
+    Methods:
+        get_all_relatives(): takes tensor of target patients node_ids in input and gives a tensor of relatives node_ids as output
+        get_all_static_data(): takes tensor of patients node_ids in input and gives covariate information as output 
+    """ 
+
     def __init__(self, maskfile, featfile, statfile, edgefile, params):
 
-        feat_df = pd.read_csv(featfile)
-        self.params = params 
+        self.params = params
+
+        feat_df = pd.read_csv(featfile) 
         self.label_key              = feat_df[feat_df['type']=='label']['name'].tolist()[0]        
         self.static_features        = feat_df[feat_df['type']=='static']['name'].tolist()
         self.edge_features          = feat_df[feat_df['type']=='edge']['name'].tolist()
@@ -84,17 +88,9 @@ class GraphData(GraphDataset):
         
     def construct_patient_graph(self, target_patient, all_relatives, all_x_static, all_y):
         """Creates a pytorch_geometric data object for one target patient
-        
-        the function is also responsible for adding relatives' information and edge weights
-
-        Args: 
-          target_patient: node_id of the target patient the graph is constructed around
-          all_relatives:  to be retrived from DataFetch object
-          all_x_static:   to be retrived from DataFetch object 
-          all_y:          to be retrived from DataFetch object 
         """
         
-        # get all unique nodes to be used in the graph, use np.array for performance
+        # get all unique nodes to be used in the graph, use np.asarray for performance
         nodes_ids = np.asarray(list(set(
           self.fetch_data.edge_df.loc[target_patient].node1 + 
           self.fetch_data.edge_df.loc[target_patient].node2
@@ -136,7 +132,7 @@ class GraphData(GraphDataset):
         all_x_static, all_y     = self.fetch_data.get_all_static_data(all_relatives)
 
         for patient in batch_patient_list:
-            patient_graph = self.fetch_data.construct_patient_graph(patient.item(), all_relatives, all_x_static, all_y)
+            patient_graph = construct_patient_graph(patient.item(), all_relatives, all_x_static, all_y)
             data_list.append(patient_graph)
 
         batch_data = Batch.from_data_list(data_list)
@@ -157,7 +153,7 @@ def get_batch_and_loader(patient_list, fetch_data, params, shuffle=True):
 
     Returns:
         dataset (torch_geometric.data.Dataset)
-        loader ():     
+        loader ()    
     """  
     dataset = GraphData(patient_list, fetch_data)
 
