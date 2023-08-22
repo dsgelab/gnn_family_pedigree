@@ -1,16 +1,15 @@
 source /data/projects/project_GNN/envs/graphml/bin/activate
 
 outpath=output 
-experiment=test_noedge 
+experiment=test_0 
 
-sqlpath=/data/projects/project_SophieAndZhiyu/GraphIn/CleanNoCut/long.db
-statfile=/data/projects/project_GNN/age_prediction/data/statfile.csv
-maskfile=/data/projects/project_GNN/age_prediction/data/maskfile.csv
-edgefile=/data/projects/project_GNN/age_prediction/data/edgefile.csv
-featfile=/data/projects/project_GNN/age_prediction/data/featfile.csv 
+statfile=/data/projects/project_GNN/gnn_family_pedigree/data/statfile.csv
+maskfile=/data/projects/project_GNN/gnn_family_pedigree/data/maskfile.csv
+edgefile=/data/projects/project_GNN/gnn_family_pedigree/data/edgefile.csv
+featfile=/data/projects/project_GNN/gnn_family_pedigree/data/featfile.csv 
 
 model_type=graph
-gnn_layer=graphconv
+gnn_layer=gcn
 use_edge=True
 mask_target=True
 pooling_method=mean
