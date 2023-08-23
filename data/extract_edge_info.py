@@ -43,7 +43,8 @@ df = df.loc[df['node1'].notna()].reset_index(drop=True)
 df = df.loc[df['node2'].notna()].reset_index(drop=True)
 
 # save results
-df_edge = df[['node1','node2','weight','relationship_type']]
+df['target_id'] = df.node1
+df_edge = df[['node1','node2','target_id','weight','relationship_type']]
 df_edge.to_csv(PROJECT_PATH+"data/edgefile.csv", index=None)
 
 gc.collect()
