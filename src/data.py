@@ -10,15 +10,14 @@ import pandas as pd
 import numpy as np
 from random import choices
 
-# import networkx as nx
-# import matplotlib.pyplot as plt
-
-
 class DataFetch():
-    """Class for fetching patient data
+    """Class for fetching and formatting data
 
-    Expects a list of patients encoded using the node_ids
+    Expects a tensor list of patients encoded using the numerical node_ids
 
+    Assumes maskfile, statfile rows are indexed in order of these node_ids (0, 1, ... num_samples)
+    and they include data for both the target and graph samples (retrieve data using .iloc)
+    
     The edgefile only needs to include data for the target samples, and is indexed
     using the node_ids (retrieve data using .loc)
 
@@ -26,110 +25,87 @@ class DataFetch():
     Note: if the input is a directed graph the code converts it to an undirected graph
 
     Args:
-        maskfile, featfile, statfile and edgefile (str): filepaths to respective csv files
-        params (list): contains all the parameter specification used in the project
-        patient_list (torch.tensor):
-
-    Methods:
-        get_all_relatives(): takes tensor of target patients node_ids in input and gives a tensor of relatives node_ids as output
-        get_all_static_data(): takes tensor of patients node_ids in input and gives covariate information as output 
-    """ 
-
+        maskfile, featfile, statfile and edgefile are filepaths to csv files
+        sqlpath is the path to the sql database
+    """
     def __init__(self, maskfile, featfile, statfile, edgefile, params):
 
-        self.params = params
-
-        feat_df = pd.read_csv(featfile) 
+        feat_df = pd.read_csv(featfile)
+        self.params = params 
         self.label_key              = feat_df[feat_df['type']=='label']['name'].tolist()[0]        
         self.static_features        = feat_df[feat_df['type']=='static']['name'].tolist()
         self.edge_features          = feat_df[feat_df['type']=='edge']['name'].tolist()
-        # gcn and graphconv only support a single edge weight
+        # some gnn layers only support a single edge weight
         if params['gnn_layer'] in ['gcn', 'graphconv']: self.edge_features=['weight']
 
         stat_df = pd.read_csv(statfile)
         self.label_data     = torch.tensor(stat_df[self.label_key].to_numpy(), dtype=torch.float)
-        self.static_data    = torch.tensor(stat_df[self.static_features].to_numpy(), dtype=torch.float)
-
+        self.static_data    = torch.tensor(stat_df[self.static_features].values, dtype=torch.float)
+       
         mask_df = pd.read_csv(maskfile)
-        self.train_patient_list               = torch.tensor(mask_df[mask_df['train']==0]['node_id'].to_numpy(),dtype=torch.long)
-        self.validate_patient_list            = torch.tensor(mask_df[mask_df['train']==1]['node_id'].to_numpy(),dtype=torch.long)
-        self.test_patient_list                = torch.tensor(mask_df[mask_df['train']==2]['node_id'].to_numpy(),dtype=torch.long)
+        self.train_patient_list               = torch.tensor(mask_df[mask_df['train']==0]['node_id'].to_numpy())
+        self.validate_patient_list            = torch.tensor(mask_df[mask_df['train']==1]['node_id'].to_numpy())
+        self.test_patient_list                = torch.tensor(mask_df[mask_df['train']==2]['node_id'].to_numpy())
 
         self.edge_df = pd.read_csv(edgefile)
-        self.edge_df = self.edge_df.groupby('target_id').agg(list)
-        
-    # NB: is more efficient to retrive all information at once for every target patient
+        self.edge_df = self.edge_df.groupby('target_patient').agg(list)
     
-    def get_all_relatives(self, patient_list):
-        nodes_included = torch.tensor(list(set(
-          [i for list in self.edge_df.loc[patient_list]['node1'].to_list() for i in list] + 
-          [i for list in self.edge_df.loc[patient_list]['node2'].to_list() for i in list]
-          )))      
-        return nodes_included
-      
-    def get_all_static_data(self, patient_list):
-        # retrive static info for all nodes included in patient_list graphs
-        x_static = self.static_data[patient_list]
-        y = self.label_data[patient_list]
+    def get_static_data(self, patients):
+        x_static = self.static_data[patients]
+        y = self.label_data[patients]
         return x_static, y
 
-    def construct_patient_graph(self, target_patient, all_relatives, all_x_static, all_y):
-        """Creates a pytorch_geometric data object for one target patient
-        """
-        
-        # get all unique nodes to be used in the graph, use np.asarray for performance
-        nodes_ids = np.asarray(list(set(
-          self.edge_df.loc[target_patient].node1 + 
-          self.edge_df.loc[target_patient].node2
-          )))
-        node_indices = [list(all_relatives.tolist()).index(value) for value in nodes_ids]
-        
-        # if required perform masking (put -1) of target patient info
-        x_static = all_x_static[node_indices]
-        target_index = torch.tensor(list(node_ordering.tolist()).index(target_patient))
-        if self.params['mask_target']=='True': 
-          x_static[target_index] = torch.full( size = (1,len(self.static_features)), value = -1)
-        y = all_y[list(all_relatives.tolist()).index(target_patient)] 
+    def get_relatives(self, patients):
+        nodes_included = torch.tensor(list(set([i for list in self.edge_df.loc[patients]['node1'].to_list() for i in list] + [i for list in self.edge_df.loc[patients]['node2'].to_list() for i in list])))      
+        return nodes_included
 
-        # prepare weight info
-        node1 = [list(nodes_ids.tolist()).index(value) for value in self.edge_df.loc[target_patient].node1]
-        node2 = [list(nodes_ids.tolist()).index(value) for value in self.edge_df.loc[target_patient].node2]
-        edge_index = torch.tensor([node1,node2], dtype=torch.long)
-        if self.params['use_edge'] == 'True':
-            edge_weight = torch.t(torch.tensor(self.edge_df.loc[target_patient][self.edge_features], dtype=torch.float))
-        elif self.params['use_edge'] == 'False':
-            edge_weight = torch.full(size = (self.edge_df.loc[target_patient].shape[0],1), value = 1)
-        # create graph data
-        data = torch_geometric.data.Data(x=x_static, y=y, edge_index=edge_index, edge_attr=edge_weight)
-          
-        transform = torch_geometric.transforms.ToUndirected(reduce='mean')
-        final_data = transform(data)
-        # add info on target patient node
-        final_data.target_index = target_index
+    def construct_patient_graph(self, patient, all_relatives, all_x_static, all_y):
+        """Creates a re-indexed pytorch geometric data object for the patient
+        """
+        # order nodes and get indices in all_relatives to retrieve feature data
+        node_ordering = np.asarray(list(set(self.edge_df.loc[patient].node1 + self.edge_df.loc[patient].node2)))
+        node_indices = [list(all_relatives.tolist()).index(value) for value in node_ordering]
+        x_static = all_x_static[node_indices]
+        # mask target patient with vector of all -1
+        target_index = torch.tensor(list(node_ordering.tolist()).index(patient))
+        if self.params['mask_target'] == 'True':
+            x_static[target_index] = torch.full( (1,len(self.static_features)),-1)
+        y = all_y[list(all_relatives.tolist()).index(patient)] 
         
-        return final_data    
+        # reindex the edge indices from 0, 1, ... num_nodes
+        node1 = [list(node_ordering.tolist()).index(value) for value in self.edge_df.loc[patient].node1]
+        node2 = [list(node_ordering.tolist()).index(value) for value in self.edge_df.loc[patient].node2]
+        edge_index = torch.tensor([node1,node2], dtype=torch.long)
+        edge_weight = torch.t(torch.tensor(self.edge_df.loc[patient][self.edge_features], dtype=torch.float))
+
+        # create graph
+        if self.params['use_edge'] == 'True':
+            data = torch_geometric.data.Data(x=x_static, y=y, edge_index=edge_index, edge_attr=edge_weight)
+        if self.params['use_edge'] == 'False':
+            data = torch_geometric.data.Data(x=x_static, y=y, edge_index=edge_index)
+        transform = torch_geometric.transforms.ToUndirected(reduce='mean')
+        data = transform(data)
+        data.target_index = target_index
+
+        return data
 
 
 class GraphData(GraphDataset):
     def __init__(self, patient_list, fetch_data):
         """Loads a batch of multiple patient graphs
-        
-        Args: 
-          patient_list (torch.Tensor): list of all target patients to consider
-          fetch_data (DataFetch obj): fetched information about every patient
         """
         self.patient_list = patient_list
         self.num_target_patients = len(patient_list)
         self.fetch_data = fetch_data
 
-    def __getitem__(self, patient_to_batch):
-        """Creates a pytorch geometric Batch object for multiple target patients
-        """
-        batch_patient_list = self.patient_list[patient_to_batch]
+    def __getitem__(self, patients):
+        # returns multiple patient graphs by constructing a pytorch geometric Batch object
+        batch_patient_list = self.patient_list[patients]
         data_list = []
 
-        all_relatives           = self.fetch_data.get_all_relatives(batch_patient_list)
-        all_x_static, all_y     = self.fetch_data.get_all_static_data(all_relatives)
+        # it's more efficient to fetch feature data for all patients and their relatives, and then split into separate graphs
+        all_relatives           = self.fetch_data.get_relatives(batch_patient_list)
+        all_x_static, all_y     = self.fetch_data.get_static_data(all_relatives)
 
         for patient in batch_patient_list:
             patient_graph = self.fetch_data.construct_patient_graph(patient.item(), all_relatives, all_x_static, all_y)
