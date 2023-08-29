@@ -12,7 +12,6 @@ from sklearn.model_selection import train_test_split
 # starting from minimal_phenotype in Finregistry extract the study population
 
 MIN_PHENO_PATH = "/data/processed_data/minimal_phenotype/archive/minimal_phenotype_2022-03-28.csv"
-# ENDPOINTS = ...
 PROJECT_PATH = "/data/projects/project_GNN/gnn_family_pedigree/"
 
 TIME_POINT = "2010-01-01"
@@ -23,7 +22,7 @@ df = pd.read_csv(MIN_PHENO_PATH, sep = ',')
 N_START = df.shape[0]
 
 # EXCLUSION CRITERIA: 
-# 	missing age or sex
+#	missing age or sex
 
 df["graph"] = 1
 print(f'starting from {N_START} patients available in Finregistry')
@@ -34,8 +33,9 @@ N_INCLUDED = N_START - sum(to_exclude)
 print(f'after exclusion criteria {N_INCLUDED} patients are going to be used in the study')
 
 # assign node_id to those patients
-df.loc[df.graph==0,'node_id'] = np.NaN
+df.loc[df.graph==0,'node_id'] = -1
 df.loc[df.graph==1,'node_id'] = np.arange(N_INCLUDED) + 1
+df['node_id'] = df.node_id.astype('int64')
 
 # format date variables
 df["birth_date"] = pd.to_datetime( df.date_of_birth,  format="%Y-%m-%d",errors="coerce" )
@@ -49,9 +49,13 @@ df["alive"]	= np.where(df.death_date>time_point,0,1)
 # TARGET PATIENT DEFINITION:
 # 	index person
 # 	speaks finnish or svedish
+#   has both parents 
+
+with open("/data/projects/project_GNN/gnn_family_pedigree/data/both_parents_list.txt") as file:
+    has_both_parents = [line.strip() for line in file]
 
 df["target"] = 0
-is_target = ( (df.index_person==1) & (df.mother_tongue.isin(['fi','sw'])) )
+is_target = ( (df.index_person==1) & (df.mother_tongue.isin(['fi','sw'])) & (df.FINREGISTRYID.isin(has_both_parents)) )
 df.loc[is_target,"target"] = 1
 print(f'{sum(is_target)} patients are going to be used as target patients')
 
@@ -68,8 +72,11 @@ print(f'there are {sum(df.train==0)} training target patients')
 print(f'there are {sum(df.train==1)} validation target patients')
 print(f'there are {sum(df.train==2)} test target patients')
 
+# uncomment and run the following lines to extract a sample dataset
+# df = df.iloc[:100_000,:]
+
 # save results
-STATFILE_COLS = ['FINREGISTRYID','age','sex','alive','mother_tongue','emigrated','index_person','graph','node_id']
+STATFILE_COLS = ['FINREGISTRYID','age','sex','alive','mother_tongue','emigrated','index_person','graph','node_id','target']
 MASKFILE_COLS = ['FINREGISTRYID','graph','node_id','target','train']
 
 df[STATFILE_COLS].to_csv(PROJECT_PATH+"data/statfile.csv", index=False)
