@@ -6,8 +6,9 @@ the result can be found in the folder **output/**
 
 # FILES
 **data/** folder contains all the data used in the project and the scripts to create them, which are:
-- _extract_study_population.py_ : create statfile.csv and maskfile.csv
-- _extract_edge_info.py_        : create edgefile.csv
+- _extract_study_population.py_ 	: create statfile.csv and maskfile.csv
+- _extract_edge_info.py_        	: create edgefile.csv
+- _extract_bothparent_patients.py_	: create both_parents_list.txt
 
 STATFILE : contains all the feature information for every patient available
 
