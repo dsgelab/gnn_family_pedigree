@@ -11,7 +11,7 @@ from sklearn.model_selection import train_test_split
 
 # starting from minimal_phenotype in Finregistry extract the study population
 
-MIN_PHENO_PATH = "/data/processed_data/minimal_phenotype/archive/minimal_phenotype_2022-03-28.csv"
+MIN_PHENO_PATH = "/data/processed_data/minimal_phenotype/minimal_phenotype_2023-08-14.csv"
 PROJECT_PATH = "/data/projects/project_GNN/gnn_family_pedigree/"
 
 TIME_POINT = "2010-01-01"
@@ -19,10 +19,11 @@ DAYS_TO_YEARS = 365.25
 
 # FETCH DATA
 df = pd.read_csv(MIN_PHENO_PATH, sep = ',')
+df = df.rename(str.lower,axis='columns').rename(columns={'finregistryid':'FINREGISTRYID'})
 N_START = df.shape[0]
 
 # EXCLUSION CRITERIA: 
-#	missing age or sex
+#   missing age or sex
 
 df["graph"] = 1
 print(f'starting from {N_START} patients available in Finregistry')
@@ -43,19 +44,25 @@ df["death_date"] = pd.to_datetime( df.death_date,  format="%Y-%m-%d",errors="coe
 time_point = pd.to_datetime( TIME_POINT,  format="%Y-%m-%d",errors="coerce" )
 
 # extract covariates of interest
-df["age"]	= round( (time_point - df.birth_date).dt.days/DAYS_TO_YEARS, 2)
-df["alive"]	= np.where(df.death_date>time_point,0,1)
+df["age"]   = round( (time_point - df.birth_date).dt.days/DAYS_TO_YEARS, 2)
+df["alive"] = np.where(df.death_date>time_point,0,1)
 
 # TARGET PATIENT DEFINITION:
-# 	index person
-# 	speaks finnish or svedish
+#   index person
+#   speaks finnish or svedish
 #   has both parents 
+#   didn't emigrate
 
 with open("/data/projects/project_GNN/gnn_family_pedigree/data/both_parents_list.txt") as file:
     has_both_parents = [line.strip() for line in file]
 
 df["target"] = 0
-is_target = ( (df.index_person==1) & (df.mother_tongue.isin(['fi','sw'])) & (df.FINREGISTRYID.isin(has_both_parents)) )
+is_target = ( 
+  (df.index_person==1) & 
+  (df.mother_tongue.isin(['fi','sv'])) & 
+  (df.FINREGISTRYID.isin(has_both_parents)) &
+  (df.emigrated == 0 | df.emigrated.isna())
+  )
 df.loc[is_target,"target"] = 1
 print(f'{sum(is_target)} patients are going to be used as target patients')
 
@@ -71,9 +78,6 @@ df.loc[df.target==1,"train"] = np.random.choice([0,1,2], sum(is_target), p=train
 print(f'there are {sum(df.train==0)} training target patients')
 print(f'there are {sum(df.train==1)} validation target patients')
 print(f'there are {sum(df.train==2)} test target patients')
-
-# uncomment and run the following lines to extract a sample dataset
-# df = df.iloc[:100_000,:]
 
 # save results
 STATFILE_COLS = ['FINREGISTRYID','age','sex','alive','mother_tongue','emigrated','index_person','graph','node_id','target']
