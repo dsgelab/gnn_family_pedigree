@@ -10,7 +10,7 @@ featfile=/data/projects/project_GNN/gnn_family_pedigree/data/featfile.csv
 
 model_type=graph
 gnn_layer=gcn
-use_edge=True
+use_edge=False
 mask_target=True
 pooling_method=mean
 num_workers=8
