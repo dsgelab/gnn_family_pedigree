@@ -1,3 +1,9 @@
+
+# PREPARE ENVIRONMENT
+
+# run this in ePouta: 
+# source /data/projects/project_GNN/envs/graphml/bin/activate
+
 import pandas as pd
 
 RELATIVES_PATH = "/data/projects/project_SophieAndZhiyu/Relatives/family_relationships.wMarrigeChild"
