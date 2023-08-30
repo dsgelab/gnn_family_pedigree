@@ -37,24 +37,30 @@ class DataFetch():
         self.edge_features          = feat_df[feat_df['type']=='edge']['name'].tolist()
         # some gnn layers only support a single edge weight
         if params['gnn_layer'] in ['gcn', 'graphconv']: self.edge_features=['weight']
+        del feat_df
 
         stat_df = pd.read_csv(statfile)
         self.label_data     = torch.tensor(stat_df[self.label_key].to_numpy(), dtype=torch.float)
         self.static_data    = torch.tensor(stat_df[self.static_features].values, dtype=torch.float)
-       
+        del stat_df
+        
         mask_df = pd.read_csv(maskfile)
         self.train_patient_list               = torch.tensor(mask_df[mask_df['train']==0]['node_id'].to_numpy())
         self.validate_patient_list            = torch.tensor(mask_df[mask_df['train']==1]['node_id'].to_numpy())
         self.test_patient_list                = torch.tensor(mask_df[mask_df['train']==2]['node_id'].to_numpy())
-
+        del mask_df
+        
         self.edge_df = pd.read_csv(edgefile)
         # crete two datasets: 
         # 1. for connecting nodes and avoid double edges 
-        edges_to_keep = self.edge_df.relationship_type.isin(['parent_na','offspring_na','sibling_full','sibling_na'])
-        self.edge_connections = self.edge_df[edges_to_keep]
+        self.edge_connections = self.edge_df[ self.edge_df.relationship_type.isin([
+          'parent_na',
+          'offspring_na',
+          'sibling_full',
+          'sibling_na'])]
         # 2. for extracting the node features
-        self.edge_df = self.edge_df.groupby('target_patient').agg(list)
-    
+        self.edge_df = self.edge_df[self.edge_df!=-1].groupby('target_patient').agg(list)
+        
     def get_static_data(self, patients):
         x_static = self.static_data[patients]
         y = self.label_data[patients]
