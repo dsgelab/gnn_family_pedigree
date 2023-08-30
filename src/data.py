@@ -48,6 +48,11 @@ class DataFetch():
         self.test_patient_list                = torch.tensor(mask_df[mask_df['train']==2]['node_id'].to_numpy())
 
         self.edge_df = pd.read_csv(edgefile)
+        # crete two datasets: 
+        # 1. for connecting nodes and avoid double edges 
+        edges_to_keep = self.edge_df.relationship_type.isin(['parent_na','offspring_na','sibling_full','sibling_na'])
+        self.edge_connections = self.edge_df[edges_to_keep]
+        # 2. for extracting the node features
         self.edge_df = self.edge_df.groupby('target_patient').agg(list)
     
     def get_static_data(self, patients):
@@ -65,6 +70,7 @@ class DataFetch():
         # order nodes and get indices in all_relatives to retrieve feature data
         node_ordering = np.asarray(list(set(self.edge_df.loc[patient].node1 + self.edge_df.loc[patient].node2)))
         node_indices = [list(all_relatives.tolist()).index(value) for value in node_ordering]
+        NODE_MAP = dict(zip(node_ordering, node_indices))
         x_static = all_x_static[node_indices]
         # mask target patient with vector of all -1
         target_index = torch.tensor(list(node_ordering.tolist()).index(patient))
@@ -72,18 +78,20 @@ class DataFetch():
             x_static[target_index] = torch.full( (1,len(self.static_features)),-1)
         y = all_y[list(all_relatives.tolist()).index(patient)] 
         
-        # reindex the edge indices from 0, 1, ... num_nodes
-        node1 = [list(node_ordering.tolist()).index(value) for value in self.edge_df.loc[patient].node1]
-        node2 = [list(node_ordering.tolist()).index(value) for value in self.edge_df.loc[patient].node2]
-        edge_index = torch.tensor([node1,node2], dtype=torch.long)
-        edge_weight = torch.t(torch.tensor(self.edge_df.loc[patient][self.edge_features], dtype=torch.float))
+        # prepare edge information
+        edges_to_use = self.edge_connections[ (self.edge_connections.node1.isin(NODE_MAP.keys())) & (self.edge_connections.node2.isin(NODE_MAP.keys()))]
+        node1 = edges_to_use['node1'].map(NODE_MAP).tolist()
+        node2 = edges_to_use['node2'].map(NODE_MAP).tolist()
+        unique_edges = list(set(tuple(sorted(tpl)) for tpl in [(node1,node2)]))
+        edge_index = torch.tensor(unique_edges, dtype=torch.long)
+        # edge_weight = torch.t(torch.tensor(self.edge_df.loc[patient][self.edge_features], dtype=torch.float))
 
         # create graph
         if self.params['use_edge'] == 'True':
             data = torch_geometric.data.Data(x=x_static, y=y, edge_index=edge_index, edge_attr=edge_weight)
         if self.params['use_edge'] == 'False':
             data = torch_geometric.data.Data(x=x_static, y=y, edge_index=edge_index)
-        transform = torch_geometric.transforms.ToUndirected(reduce='mean')
+        transform = torch_geometric.transforms.ToUndirected()
         data = transform(data)
         data.target_index = target_index
 
