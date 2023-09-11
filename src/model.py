@@ -5,9 +5,10 @@ import torch.nn.functional as F
 
 
 class GNN(torch.nn.Module):
-    def __init__(self, num_features_static_graph, hidden_dim, gnn_layer, pooling_method, dropout_rate, ratio):
+    def __init__(self, num_features_static_graph, hidden_dim, gnn_layer, pooling_method, dropout_rate, ratio, loss):
         super().__init__()
         self.pooling_method = pooling_method
+        self.loss = loss
 
         # which gnn layer to use is specified by input argument
         if gnn_layer=='gcn':
@@ -44,6 +45,9 @@ class GNN(torch.nn.Module):
             
         out = self.dropout(out)  
         out = self.relu(self.pre_final_linear(out))
-        out = self.relu(self.final_linear(out))
+        if self.loss=='bce':
+            out = self.sigmoid(self.final_linear(out))
+        else:
+            out = self.relu(self.final_linear(out))
 
         return out

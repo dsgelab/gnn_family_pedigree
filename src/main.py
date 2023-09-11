@@ -48,7 +48,6 @@ def get_model_output(model, data_batch, params):
     batch                   = data_batch.batch.to(params['device'])
     target_index            = data_batch.target_index.to(params['device'])
 
-
     # look in forward() in model.py for model architecture
     output = model(x_static_graph, edge_index, edge_weight, batch, target_index)
     model_output = {'output':output}
@@ -299,7 +298,8 @@ if __name__ == "__main__":
         gnn_layer                   = params['gnn_layer'], 
         pooling_method              = params['pooling_method'], 
         dropout_rate                = params['dropout_rate'], 
-        ratio                       = params['ratio'])
+        ratio                       = params['ratio'],
+        loss                        = params['loss'])
 
     model_path = '{}/{}_model.pth'.format(params['outpath'], params['outname'])
     results_path = '{}/{}_results.csv'.format(params['outpath'], params['outname'])
