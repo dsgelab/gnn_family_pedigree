@@ -19,7 +19,7 @@ from sklearn.metrics import matthews_corrcoef, confusion_matrix
 from sklearn.linear_model import LogisticRegression
 
 # explainability
-# import explainability
+import explainability
 
 # IMPORT USER-DEFINED FUNCTIONS
 from data import DataFetch, GraphData, get_batch_and_loader
@@ -123,7 +123,9 @@ def train_model(model, train_loader, validate_loader, params):
         epoch_valid_loss = []
         for validate_batch in tqdm(validate_loader, total=params['num_batches_validate']):
             output, y = get_model_output(model, validate_batch, params)
-
+            valid_output = np.concatenate((valid_output, output['output'].reshape(-1).detach().cpu().numpy()))
+            valid_y = np.concatenate((valid_y, y.reshape(-1).detach().cpu().numpy()))
+           
             loss = valid_criterion(output['output'], y) 
             epoch_valid_loss.append(loss.item())
 
@@ -146,9 +148,9 @@ def train_model(model, train_loader, validate_loader, params):
     model.load_state_dict(torch.load(model_path))
 
     # use last values from validation set
-    if params['threshold_opt'] == 'auc' & params['loss']!='mse': 
+    if params['threshold_opt']== 'auc' and params['loss']=='bce': 
         threshold = get_classification_threshold_auc(valid_output, valid_y)
-    elif params['threshold_opt'] == 'precision_recall' & params['loss']!='mse':
+    elif params['threshold_opt']== 'precision_recall' and params['loss']=='bce':
         threshold = get_classification_threshold_precision_recall(valid_output, valid_y)
     elif params['loss']=='mse':
         threshold = None
@@ -179,12 +181,14 @@ def test_model(model, test_loader, threshold, params):
     # take average over all samples to get expected value
     test_output = np.array(test_output).mean(axis=0)
     test_y = np.array(test_y).mean(axis=0)
-    results = pd.DataFrame({'actual':test_y, 'pred_raw':test_output, 'pred_raw_se':test_output_se})
-
+    
     if params['loss']=='bce':
+        results = pd.DataFrame({'actual':test_y, 'pred_raw':test_output, 'pred_binary':test_binary, 'pred_raw_se':test_output_se})
+        results['pred_binary'] = (results['pred_raw']>threshold).astype(int)
         test_output_binary = (test_output>threshold).astype(int)
         metric_results = calculate_metrics(test_y, test_output_binary, test_output)
     elif params['loss']=='mse':
+        results = pd.DataFrame({'actual':test_y, 'pred_raw':test_output, 'pred_raw_se':test_output_se})
         mse = metrics.mean_squared_error(test_y, test_output)
         r2 = metrics.r2_score(test_y, test_output)
         metric_results = {'MSE':mse,'R2':r2}
@@ -267,6 +271,7 @@ if __name__ == "__main__":
     else:
         params['device'] = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
+    print('using the following device: {}'.format(params['device']))
     print('STARTING DATA FETCH')
     fetch_data = DataFetch(
         maskfile=filepaths['maskfile'], 

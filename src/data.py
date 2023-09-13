@@ -80,8 +80,10 @@ class DataFetch():
         node1 = [list(node_ordering.tolist()).index(value) for value in self.edge_df.loc[patient].node1]
         node2 = [list(node_ordering.tolist()).index(value) for value in self.edge_df.loc[patient].node2]
         edge_index = torch.tensor([node1,node2], dtype=torch.long)
-        self.RELATIONSHIP_MAP = dict(zip(zip(node1,node2),self.edge_df.loc[patient].relationship))
         edge_weight = torch.t(torch.tensor(self.edge_df.loc[patient][self.edge_features], dtype=torch.float))
+        # extract a map of the connections for plotting
+        #NB: can be commented when running model
+        #self.RELATIONSHIP_MAP = dict(zip(zip(node1,node2),self.edge_df.loc[patient].relationship))
         
         # create graph
         data = torch_geometric.data.Data(x=x_static, y=y, edge_index=edge_index, edge_attr=edge_weight)
