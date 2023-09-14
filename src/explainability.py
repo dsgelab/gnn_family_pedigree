@@ -54,7 +54,7 @@ def gnn_explainer(model, exp_loader, patient_list, params):
                 # then run for a node-feature-level explanation (which features of those nodes are importance, which we aggregate across the time domain)
                 # edge importance can be extracted from either of those (to determine prior/posterior comparison in edge weight importance)
 
-                x_static_graph  = data_batch.x.to(params['device'])
+                x               = data_batch.x.to(params['device'])
                 y               = data_batch.y.unsqueeze(1).to(params['device'])
                 edge_index      = data_batch.edge_index.to(params['device'])
                 edge_weight     = data_batch.edge_attr.to(params['device'])
@@ -82,7 +82,7 @@ def gnn_explainer(model, exp_loader, patient_list, params):
                     ),
                 )
 
-                explanation = explainer(x_static_graph=x_static_graph, edge_index=edge_index, **kwargs)
+                explanation = explainer(x=x, edge_index=edge_index, **kwargs)
                 node_imp = explanation.node_mask.detach().cpu().tolist()
 
                 explainer = Explainer(
@@ -100,7 +100,7 @@ def gnn_explainer(model, exp_loader, patient_list, params):
                     ),
                 )
 
-                explanation = explainer(x_static_graph=x_static_graph, edge_index=edge_index, **kwargs)
+                explanation = explainer(x=x, edge_index=edge_index, **kwargs)
                 edge_imp = explanation.edge_mask.detach().cpu().tolist()
                 long_feat_imp = explanation.node_feat_mask.detach().cpu().tolist()
 
