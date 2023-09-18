@@ -41,7 +41,7 @@ def get_model_output(model, data_batch, params):
         y: true output
     """
     
-    x_static_graph          = data_batch.x.to(params['device'])
+    x                       = data_batch.x.to(params['device'])
     y                       = data_batch.y.unsqueeze(1).to(params['device'])
     edge_index              = data_batch.edge_index.to(params['device'])
     edge_weight             = data_batch.edge_attr.to(params['device'])
@@ -49,7 +49,7 @@ def get_model_output(model, data_batch, params):
     target_index            = data_batch.target_index.to(params['device'])
 
     # look in forward() in model.py for model architecture
-    output = model(x_static_graph, edge_index, edge_weight, batch, target_index)
+    output = model(x, edge_index, edge_weight, batch, target_index)
     model_output = {'output':output}
 
     return model_output, y
@@ -146,6 +146,9 @@ def train_model(model, train_loader, validate_loader, params):
 
     # load the checkpoint with the best model
     model.load_state_dict(torch.load(model_path))
+    
+    # plot_losses
+    plot_losses(train_losses, valid_losses, '{}/{}'.format(params['outpath'], params['outname']))
 
     # use last values from validation set
     if params['threshold_opt']== 'auc' and params['loss']=='bce': 
@@ -183,10 +186,9 @@ def test_model(model, test_loader, threshold, params):
     test_y = np.array(test_y).mean(axis=0)
     
     if params['loss']=='bce':
-        results = pd.DataFrame({'actual':test_y, 'pred_raw':test_output, 'pred_binary':test_binary, 'pred_raw_se':test_output_se})
+        results = pd.DataFrame({'actual':test_y, 'pred_raw':test_output, 'pred_raw_se':test_output_se})
         results['pred_binary'] = (results['pred_raw']>threshold).astype(int)
-        test_output_binary = (test_output>threshold).astype(int)
-        metric_results = calculate_metrics(test_y, test_output_binary, test_output)
+        metric_results = calculate_metrics(test_y, results['pred_binary'], test_output)
     elif params['loss']=='mse':
         results = pd.DataFrame({'actual':test_y, 'pred_raw':test_output, 'pred_raw_se':test_output_se})
         mse = metrics.mean_squared_error(test_y, test_output)

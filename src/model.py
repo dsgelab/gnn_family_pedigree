@@ -31,7 +31,7 @@ class GNN(torch.nn.Module):
         self.sigmoid = nn.Sigmoid()
         self.dropout = nn.Dropout(dropout_rate)
         
-    def forward(self, x, edge_index, edge_weight, batch, target_index):
+    def forward(self, x, edge_index, edge_weight=None, batch=None, target_index=None):
 
         gnn_out = self.relu(self.conv1(x, edge_index, edge_weight))
         gnn_out = self.relu(self.conv2(gnn_out, edge_index, edge_weight))

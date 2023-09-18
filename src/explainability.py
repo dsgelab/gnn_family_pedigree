@@ -30,9 +30,10 @@ def sampling(results, num_positive_samples, uncertainty_rate=0.8):
 
     results = results.sample(frac=1)
     positive_samples = results[results['pred_binary']==1][0:num_positive_samples]['index'].tolist()
+    print(positive_samples)
     negative_samples = results[results['pred_binary']==0][0:num_positive_samples]['index'].tolist()
+    print(negative_samples)
     samples = positive_samples + negative_samples
-    samples = positive_samples
     print("Returning {} positive samples and {} negative samples".format(len(positive_samples), len(negative_samples)))
 
     return samples
@@ -49,6 +50,7 @@ def gnn_explainer(model, exp_loader, patient_list, params):
 
             counter = 0
             # assumes one graph is loaded at a time
+            
             for data_batch in tqdm(exp_loader, total=len(patient_list)):
                 # run for a node-level explanation (which nodes are important)
                 # then run for a node-feature-level explanation (which features of those nodes are importance, which we aggregate across the time domain)
@@ -78,12 +80,13 @@ def gnn_explainer(model, exp_loader, patient_list, params):
                     model_config=dict(
                         mode='classification',
                         task_level='graph',
-                        return_type='log_probs',
+                        return_type='probs',
                     ),
                 )
 
-                explanation = explainer(x=x, edge_index=edge_index, target=target_index, **kwargs)
+                explanation = explainer(x=x, edge_index=edge_index, target=target_index,**kwargs)
                 node_imp = explanation.node_mask.detach().cpu().tolist()
+                print(node_imp)
 
                 explainer = Explainer(
                     model=model,
@@ -96,18 +99,20 @@ def gnn_explainer(model, exp_loader, patient_list, params):
                     model_config=dict(
                         mode='classification',
                         task_level='graph',
-                        return_type='log_probs',
+                        return_type='probs',
                     ),
                 )
 
-                explanation = explainer(x=x, edge_index=edge_index, **kwargs)
+                explanation = explainer(x=x, edge_index=edge_index, target=target_index,**kwargs)
                 edge_imp = explanation.edge_mask.detach().cpu().tolist()
+                print(edge_imp)
                 long_feat_imp = explanation.node_feat_mask.detach().cpu().tolist()
 
                 target_id = patient_list[counter].item()
                 target_index = target_index.detach().cpu().tolist()[0]
                 case = y.detach().cpu().tolist()[0][0]
                 node_index = range(len(node_imp))
+                
                 for node in node_index:
                     # write target id, target index, case, node index, node_mask_value, all the columns for node_feat_mask_value (one column for each feature)
                     node_data = [str(target_id), str(target_index), str(int(case)), str(node), str(round(node_imp[node],4))]
