@@ -72,7 +72,7 @@ class DataFetch():
         x_static = all_x_static[node_indices]
         # mask target patient with vector of all -1
         target_index = node_ordering.tolist().index(patient)
-        if self.params['mask_target']=='True':
+        if self.params['mask_target']=='True': 
             x_static[target_index] = torch.full( (1,len(self.static_features)),-1)
         y = all_y[list(all_relatives.tolist()).index(patient)] 
 

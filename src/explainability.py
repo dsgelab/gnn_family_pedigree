@@ -64,8 +64,8 @@ def gnn_explainer(model, exp_loader, patient_list, params):
                 kwargs = {
                     'edge_weight':edge_weight, 
                     'batch':batch, 
-                    'target_node':target_index, 
-                    'train':False}
+                    'target_index':target_index
+                    }
 
                 explainer = Explainer(
                     model=model,
@@ -82,7 +82,7 @@ def gnn_explainer(model, exp_loader, patient_list, params):
                     ),
                 )
 
-                explanation = explainer(x=x, edge_index=edge_index, **kwargs)
+                explanation = explainer(x=x, edge_index=edge_index, target=target_index, **kwargs)
                 node_imp = explanation.node_mask.detach().cpu().tolist()
 
                 explainer = Explainer(
