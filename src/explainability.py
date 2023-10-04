@@ -30,48 +30,50 @@ def sampling(results, num_positive_samples, uncertainty_rate=0.8):
 
     results = results.sample(frac=1)
     positive_samples = results[results['pred_binary']==1][0:num_positive_samples]['index'].tolist()
-    print(positive_samples)
     negative_samples = results[results['pred_binary']==0][0:num_positive_samples]['index'].tolist()
-    print(negative_samples)
-    samples = positive_samples + negative_samples
+    #samples = positive_samples + negative_samples
+    samples = positive_samples 
     print("Returning {} positive samples and {} negative samples".format(len(positive_samples), len(negative_samples)))
 
     return samples
 
 
-def gnn_explainer(model, exp_loader, patient_list, params):
+def gnn_explainer(model, exp_loader, patient_list, params, threshold):
     print("Running GNNExplainer")
 
     outfile = '{}/{}_explainer'.format(params['outpath'], params['outname'])
     with open(f'{outfile}_edges.csv', 'w') as f_edge:
         f_edge.write("target_id,target_index,case,edge_index,edge_mask_value\n")
         with open(f'{outfile}_nodes.csv', 'w') as f_node:
-            f_node.write("target_id,target_index,case,node_index,node_mask_value\n")
+            f_node.write("target_id,target_index,case,node_index,node_mask_value,{}\n".format(','.join('feature{}'.format(i+1) for i in range(params['num_features_static']))))
 
             counter = 0
             # assumes one graph is loaded at a time
             
             for data_batch in tqdm(exp_loader, total=len(patient_list)):
+                
+                # skip iteration if patient id is not 0
+                if data_batch.target_index.item() != 0: continue
+                
                 # run for a node-level explanation (which nodes are important)
                 # then run for a node-feature-level explanation (which features of those nodes are importance, which we aggregate across the time domain)
                 # edge importance can be extracted from either of those (to determine prior/posterior comparison in edge weight importance)
 
                 x               = data_batch.x.to(params['device'])
-                y               = data_batch.y.unsqueeze(1).to(params['device'])
+                y               = data_batch.y.unsqueeze(1).view(1).to(params['device'])
                 edge_index      = data_batch.edge_index.to(params['device'])
                 edge_weight     = data_batch.edge_attr.to(params['device'])
                 batch           = data_batch.batch.to(params['device'])
                 target_index    = data_batch.target_index.to(params['device'])
-            
-                kwargs = {
-                    'edge_weight':edge_weight, 
-                    'batch':batch, 
-                    'target_index':target_index
-                    }
-
+                
+                if params['use_edge']=='False':
+                    kwargs = {'edge_weight':edge_weight, 'batch':batch, 'target_index':target_index}
+                else:
+                    kwargs = {'edge_weight':None, 'batch':batch, 'target_index':target_index}
+    
                 explainer = Explainer(
                     model=model,
-                    algorithm=GNNExplainer(epochs=25),
+                    algorithm=GNNExplainer(epochs=params['max_epochs']),
                     explainer_config=dict(
                         explanation_type='model',
                         node_mask_type='object',
@@ -81,16 +83,15 @@ def gnn_explainer(model, exp_loader, patient_list, params):
                         mode='classification',
                         task_level='graph',
                         return_type='probs',
-                    ),
+                    )
                 )
 
-                explanation = explainer(x=x, edge_index=edge_index, target=target_index,**kwargs)
+                explanation = explainer(x=x, edge_index=edge_index, **kwargs)
                 node_imp = explanation.node_mask.detach().cpu().tolist()
-                print(node_imp)
 
                 explainer = Explainer(
                     model=model,
-                    algorithm=GNNExplainer(epochs=25),
+                    algorithm=GNNExplainer(epochs=params['max_epochs']),
                     explainer_config=dict(
                         explanation_type='model',
                         node_mask_type='attributes',
@@ -100,29 +101,32 @@ def gnn_explainer(model, exp_loader, patient_list, params):
                         mode='classification',
                         task_level='graph',
                         return_type='probs',
-                    ),
+                    )
                 )
 
-                explanation = explainer(x=x, edge_index=edge_index, target=target_index,**kwargs)
+                explanation = explainer(x=x, edge_index=edge_index, **kwargs)
                 edge_imp = explanation.edge_mask.detach().cpu().tolist()
-                print(edge_imp)
                 long_feat_imp = explanation.node_feat_mask.detach().cpu().tolist()
 
                 target_id = patient_list[counter].item()
                 target_index = target_index.detach().cpu().tolist()[0]
-                case = y.detach().cpu().tolist()[0][0]
-                node_index = range(len(node_imp))
+                case = y.detach().cpu().tolist()[0]
                 
+                node_index = range(len(node_imp))
                 for node in node_index:
                     # write target id, target index, case, node index, node_mask_value, all the columns for node_feat_mask_value (one column for each feature)
                     node_data = [str(target_id), str(target_index), str(int(case)), str(node), str(round(node_imp[node],4))]
-                    node_data.extend([str(round(i,4)) for i in feat_imp_agr[node]])
+                    node_data.extend([str(round(i,4)) for i in long_feat_imp[node]])
                     f_node.write(','.join(node_data)+'\n')
 
-                edge_index = range(len(edge_imp))
-                for edge in edge_index:
+                n_edges = range(len(edge_imp))
+                edge_index = edge_index.cpu().tolist()
+                edge_index = list(zip(edge_index[0],edge_index[1])) 
+                edge_index = [ str(e).replace(', ','-') for e in edge_index]
+                
+                for edge in n_edges:
                     # write target id, target index, case, edge_index, edge_mask_value
-                    edge_data = [str(target_id), str(target_index), str(int(case)), str(edge), str(round(edge_imp[edge],4))]
+                    edge_data = [str(target_id), str(target_index), str(int(case)), str(edge_index[edge]), str(round(edge_imp[edge],4))]
                     f_edge.write(','.join(edge_data)+'\n')
 
                 counter += 1
