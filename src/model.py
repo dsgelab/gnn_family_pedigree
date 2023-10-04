@@ -13,8 +13,8 @@ class GNN(torch.nn.Module):
         # which gnn layer to use is specified by input argument
         if gnn_layer=='gcn':
             print("Using GCN layers")
-            self.conv1 = gnn.GCNConv(num_features_static_graph, hidden_dim)
-            self.conv2 = gnn.GCNConv(hidden_dim, hidden_dim)
+            self.conv1 = gnn.GCNConv(num_features_static_graph, hidden_dim, add_self_loops=False)
+            self.conv2 = gnn.GCNConv(hidden_dim, hidden_dim, add_self_loops=False)
         if gnn_layer=='graphconv':
             print("Using GraphConv layers")
             self.conv1 = gnn.GraphConv(num_features_static_graph, hidden_dim)
@@ -34,7 +34,6 @@ class GNN(torch.nn.Module):
     def forward(self, x, edge_index, edge_weight=None, batch=None, target_index=None):
 
         gnn_out = self.relu(self.conv1(x, edge_index, edge_weight))
-        gnn_out = self.relu(self.conv2(gnn_out, edge_index, edge_weight))
         
         if self.pooling_method=='target':
             out = gnn_out[target_index] 
@@ -45,9 +44,6 @@ class GNN(torch.nn.Module):
             
         out = self.dropout(out)  
         out = self.relu(self.pre_final_linear(out))
-        if self.loss=='bce':
-            out = self.sigmoid(self.final_linear(out))
-        else:
-            out = self.relu(self.final_linear(out))
+        out = self.sigmoid(self.final_linear(out))
 
         return out
