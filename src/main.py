@@ -49,7 +49,10 @@ def get_model_output(model, data_batch, params):
     target_index            = data_batch.target_index.to(params['device'])
 
     # look in forward() in model.py for model architecture
-    output = model(x, edge_index, edge_weight, batch, target_index)
+    if params['use_edge']=='True':
+        output = model(x, edge_index, edge_weight, batch, target_index)
+    else:
+        output = model(x, edge_index, None, batch, target_index)
     model_output = {'output':output}
 
     return model_output, y
@@ -316,9 +319,12 @@ if __name__ == "__main__":
 
     if params['explainability_mode']:
         results = pd.read_csv(results_path)
+        stats = pd.read_csv(stats_path)
+        threshold = float(stats[stats['name']=='threshold']['value'])
         # select graphs to explain
-        samples = explainability.sampling(results, num_positive_samples=params['num_positive_samples'], uncertainty_rate=0.9)
+        samples = explainability.sampling(results, num_positive_samples=params['num_positive_samples'], uncertainty_rate=0.8)
         exp_patient_list = test_patient_list[samples]
+        
         # load one graph at a time
         params['batchsize'] = 1
         exp_dataset, exp_loader = get_batch_and_loader(exp_patient_list, fetch_data, params, shuffle=False)
@@ -333,7 +339,7 @@ if __name__ == "__main__":
         model.load_state_dict(torch.load(model_path))
         model.to(params['device'])
         torch.backends.cudnn.enabled = False
-        explainability.gnn_explainer(model, exp_loader, exp_patient_list, params)
+        explainability.gnn_explainer(model, exp_loader, exp_patient_list, params, threshold)
         
     else:
         # normal training model
@@ -348,6 +354,7 @@ if __name__ == "__main__":
         model, threshold = train_model(model, train_loader, validate_loader, params)
         torch.save(model.state_dict(), model_path)
         END = time.time()
+        params['num_parameters'] = sum(p.numel() for p in model.parameters())
         params['threshold'] = threshold
         params['training_time'] = (END-START)/60
 

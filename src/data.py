@@ -52,8 +52,6 @@ class DataFetch():
         
         self.edge_df = pd.read_csv(edgefile)
         self.edge_df = self.edge_df.groupby('target_patient').agg(list)
-        print(f'there are a total of {len(self.edge_df.index)} subraphs')
-
         
     def get_static_data(self, patients):
         x_static = self.static_data[patients]
@@ -82,17 +80,13 @@ class DataFetch():
         edge_index = torch.tensor([node1,node2], dtype=torch.long)
         edge_weight = torch.t(torch.tensor(self.edge_df.loc[patient][self.edge_features], dtype=torch.float))
         # extract a map of the connections for plotting
-        #NB: can be commented when running model
-        #self.RELATIONSHIP_MAP = dict(zip(zip(node1,node2),self.edge_df.loc[patient].relationship))
+        # self.RELATIONSHIP_MAP = dict(zip(zip(node1,node2),self.edge_df.loc[patient].relationship))
         
         # create graph
-        data = torch_geometric.data.Data(x=x_static, y=y, edge_index=edge_index, edge_attr=edge_weight)
-        transform = torch_geometric.transforms.ToUndirected(reduce='mean')
-        data = transform(data)
+        data = torch_geometric.data.Data(x=x_static, y=y, edge_index=edge_index, edge_attr=edge_weight, directed=True)
         data.target_index = torch.tensor(target_index)
         
         return data
-
 
 class GraphData(GraphDataset):
     def __init__(self, patient_list, fetch_data):
