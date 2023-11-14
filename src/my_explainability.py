@@ -5,17 +5,12 @@ import torch
 
 
 def sampling(results, num_positive_samples, uncertainty_rate=0.8):
-    """Determine which samples to generate explanations for by identifying a balanced set
-    of low risk and high risk patients which the model predicted correctly with high confidence
 
-    Parameters:
-    results - dataframe of results on test dataset
-    num_positive_samples - how many samples from the minority class to include (= num_negative_samples)
-    uncertainty_rate - fraction of lowest-uncertainty results to retain
-    """
     results['index'] = range(len(results))
-    # patients the model predicted correctly
+    # patients the model predicted correctly and with low uncertainty
     results = results[results['actual']==results['pred_binary']]
+    results = results.sort_values(by='pred_raw_se')[0:int(len(results)*uncertainty_rate)]
+
     # randomly sample at a rate of 50% minority class, 50% majority class
     if len(results[results['pred_binary']==1])<num_positive_samples:
         print("Only {}<{} positive samples were identified".format(len(results[results['pred_binary']==1]), num_positive_samples))
@@ -24,18 +19,17 @@ def sampling(results, num_positive_samples, uncertainty_rate=0.8):
     results = results.sample(frac=1)
     positive_samples = results[results['pred_binary']==1][0:num_positive_samples]['index'].tolist()
     negative_samples = results[results['pred_binary']==0][0:num_positive_samples]['index'].tolist()
-    #samples = positive_samples + negative_samples
-    samples = positive_samples 
-    print("Returning {} positive samples and {} negative samples".format(len(positive_samples), len(negative_samples)))
+    samples = positive_samples + negative_samples
 
+    print("Returning {} positive samples and {} negative samples".format(len(positive_samples), len(negative_samples)))
     return samples
 
 
 
 def gnn_explainer(model, exp_loader, patient_list, params, threshold):
-    print("Running GNNExplainer")
 
     outfile = '{}/{}_explainer'.format(params['outpath'], params['outname'])
+    
     with open(f'{outfile}_features.csv', 'w') as f_features:
         f_features.write("target_id,feature_masked,new_score,old_score,delta\n")
         with open(f'{outfile}_nodes.csv', 'w') as f_nodes:

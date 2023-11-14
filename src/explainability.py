@@ -3,26 +3,20 @@ Generates explanations for a trained model by conducting a post-training analysi
 """
 
 import pandas as pd
-from torch_geometric.explain import Explainer, GNNExplainer
 from tqdm import tqdm
 import numpy as np
+
 import torch
+from torch_geometric.explain import Explainer, GNNExplainer
 
 
 def sampling(results, num_positive_samples, uncertainty_rate=0.8):
-    """Determine which samples to generate explanations for by identifying a balanced set
-    of low risk and high risk patients which the model predicted correctly with high confidence
 
-    Parameters:
-    results - dataframe of results on test dataset
-    num_positive_samples - how many samples from the minority class to include (= num_negative_samples)
-    uncertainty_rate - fraction of lowest-uncertainty results to retain
-    """
     results['index'] = range(len(results))
-    # patients the model predicted correctly
+    # patients the model predicted correctly and with low uncertainty
     results = results[results['actual']==results['pred_binary']]
-    # patients the model predicted with lower uncertainty
     results = results.sort_values(by='pred_raw_se')[0:int(len(results)*uncertainty_rate)]
+
     # randomly sample at a rate of 50% minority class, 50% majority class
     if len(results[results['pred_binary']==1])<num_positive_samples:
         print("Only {}<{} positive samples were identified".format(len(results[results['pred_binary']==1]), num_positive_samples))
@@ -31,17 +25,16 @@ def sampling(results, num_positive_samples, uncertainty_rate=0.8):
     results = results.sample(frac=1)
     positive_samples = results[results['pred_binary']==1][0:num_positive_samples]['index'].tolist()
     negative_samples = results[results['pred_binary']==0][0:num_positive_samples]['index'].tolist()
-    #samples = positive_samples + negative_samples
-    samples = positive_samples 
-    print("Returning {} positive samples and {} negative samples".format(len(positive_samples), len(negative_samples)))
+    samples = positive_samples + negative_samples
 
+    print("Returning {} positive samples and {} negative samples".format(len(positive_samples), len(negative_samples)))
     return samples
 
 
 def gnn_explainer(model, exp_loader, patient_list, params, threshold):
-    print("Running GNNExplainer")
 
     outfile = '{}/{}_explainer'.format(params['outpath'], params['outname'])
+
     with open(f'{outfile}_edges.csv', 'w') as f_edge:
         f_edge.write("target_id,target_index,case,edge_index,edge_mask_value\n")
         with open(f'{outfile}_nodes.csv', 'w') as f_node:
@@ -114,7 +107,6 @@ def gnn_explainer(model, exp_loader, patient_list, params, threshold):
                 
                 node_index = range(len(node_imp))
                 for node in node_index:
-                    # write target id, target index, case, node index, node_mask_value, all the columns for node_feat_mask_value (one column for each feature)
                     node_data = [str(target_id), str(target_index), str(int(case)), str(node), str(round(node_imp[node],4))]
                     node_data.extend([str(round(i,4)) for i in long_feat_imp[node]])
                     f_node.write(','.join(node_data)+'\n')
@@ -125,7 +117,6 @@ def gnn_explainer(model, exp_loader, patient_list, params, threshold):
                 edge_index = [ str(e).replace(', ','-') for e in edge_index]
                 
                 for edge in n_edges:
-                    # write target id, target index, case, edge_index, edge_mask_value
                     edge_data = [str(target_id), str(target_index), str(int(case)), str(edge_index[edge]), str(round(edge_imp[edge],4))]
                     f_edge.write(','.join(edge_data)+'\n')
 
