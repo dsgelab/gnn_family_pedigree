@@ -38,15 +38,17 @@ class GNN(torch.nn.Module):
         gnn_out = self.silu(self.conv1(x, edge_index, edge_weight))
         gnn_out = self.silu(self.conv2(gnn_out, edge_index, edge_weight))
         
-        if self.pooling_method=='sum':
+        if self.pooling_method=='target':
+            out = gnn_out[target_index] 
+        elif self.pooling_method=='sum':
             out = gnn.global_add_pool(gnn_out, batch)
         elif self.pooling_method=='mean':
             out = gnn.global_mean_pool(gnn_out, batch)
             
         out = self.dropout(out)  
-        out = self.silu(self.pre_final_linear(out))
-        
+        out = self.silu(self.pre_final_linear(out))     
         #out = self.sigmoid(self.final_linear(out))
+
         # now using BCEwithlogits because more stable
         out = self.final_linear(out)
 
