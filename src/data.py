@@ -11,32 +11,16 @@ import numpy as np
 from random import choices
 
 class DataFetch():
-    """Class for fetching and formatting data
 
-    Expects a tensor list of patients encoded using the numerical node_ids
-
-    Assumes maskfile, statfile rows are indexed in order of these node_ids (0, 1, ... num_samples)
-    and they include data for both the target and graph samples (retrieve data using .iloc)
-    
-    The edgefile only needs to include data for the target samples, and is indexed
-    using the node_ids (retrieve data using .loc)
-
-    Note: the featfile has exactly one label, corresponding to the label column name in the statfile
-    Note: if the input is a directed graph the code converts it to an undirected graph
-
-    Args:
-        maskfile, featfile, statfile and edgefile are filepaths to csv files
-        sqlpath is the path to the sql database
-    """
     def __init__(self, maskfile, featfile, statfile, edgefile, params):
 
-        feat_df = pd.read_csv(featfile)
         self.params = params 
+
+        feat_df = pd.read_csv(featfile)
         self.label_key              = feat_df[feat_df['type']=='label']['name'].tolist()[0]        
         self.static_features        = feat_df[feat_df['type']=='static']['name'].tolist()
         self.edge_features          = feat_df[feat_df['type']=='edge']['name'].tolist()
-        # some gnn layers only support a single edge weight
-        if params['gnn_layer'] in ['gcn', 'graphconv']: self.edge_features=['weight']
+        #NB: some gnn layers only support a single edge weight
         del feat_df
 
         stat_df = pd.read_csv(statfile)
@@ -52,7 +36,6 @@ class DataFetch():
         self.num_samples_train_majority_class = torch.sum(self.label_data[self.train_patient_list]==0).item()
         self.num_samples_valid_minority_class = torch.sum(self.label_data[self.validate_patient_list]==1).item()
         self.num_samples_valid_majority_class = torch.sum(self.label_data[self.validate_patient_list]==0).item()
-
         del mask_df
         
         self.edge_df = pd.read_csv(edgefile)
@@ -69,17 +52,18 @@ class DataFetch():
 
     def construct_patient_graph(self, patient, all_relatives, all_x_static, all_y):
       
-        # order nodes and get indices in all_relatives to retrieve feature data
+        # get nodes and get indices in all_relatives to retrieve feature data
         node_ordering = np.asarray(list(set(self.edge_df.loc[patient].node1 + self.edge_df.loc[patient].node2)))
         node_indices = [list(all_relatives.tolist()).index(value) for value in node_ordering]
         x_static = all_x_static[node_indices]
+        y = all_y[list(all_relatives.tolist()).index(patient)] 
+
         # mask target patient with vector of all -1
         target_index = node_ordering.tolist().index(patient)
         if self.params['mask_target']=='True': 
             x_static[target_index] = torch.full( (1,len(self.static_features)),-1)
-        y = all_y[list(all_relatives.tolist()).index(patient)] 
 
-        # reindex the edge indices from 0, 1, ... num_nodes
+        # extract edge informations
         node1 = [list(node_ordering.tolist()).index(value) for value in self.edge_df.loc[patient].node1]
         node2 = [list(node_ordering.tolist()).index(value) for value in self.edge_df.loc[patient].node2]
         edge_index = torch.tensor([node1,node2], dtype=torch.long)
@@ -95,9 +79,8 @@ class DataFetch():
         return data
 
 class GraphData(GraphDataset):
+
     def __init__(self, patient_list, fetch_data):
-        """Loads a batch of multiple patient graphs
-        """
         self.patient_list = patient_list
         self.num_target_patients = len(patient_list)
         self.fetch_data = fetch_data
@@ -107,7 +90,7 @@ class GraphData(GraphDataset):
         batch_patient_list = self.patient_list[patients]
         data_list = []
 
-        # it's more efficient to fetch feature data for all patients and their relatives, and then split into separate graphs
+        #NB: it's more efficient to fetch feature data for all patients and their relatives, and then split into separate graphs
         all_relatives           = self.fetch_data.get_relatives(batch_patient_list)
         all_x_static, all_y     = self.fetch_data.get_static_data(all_relatives)
 
@@ -123,18 +106,7 @@ class GraphData(GraphDataset):
 
 
 def get_batch_and_loader(patient_list, fetch_data, params, shuffle=True):
-    """Prepare the graph dataset to be used for training
-
-    Args:
-        patient_list (torch.tensor): list of patients to load data for 
-        fetch_data (DataFetch):  class defined in data.py
-        params: user requests, loaded using argparser
-        shuffle: samples in random order if true
-
-    Returns:
-        dataset (torch_geometric.data.Dataset)
-        loader ()    
-    """  
+    
     dataset = GraphData(patient_list, fetch_data)
 
     if shuffle:
