@@ -48,6 +48,11 @@ class DataFetch():
         self.train_patient_list               = torch.tensor(mask_df[mask_df['train']==0]['node_id'].to_numpy())
         self.validate_patient_list            = torch.tensor(mask_df[mask_df['train']==1]['node_id'].to_numpy())
         self.test_patient_list                = torch.tensor(mask_df[mask_df['train']==2]['node_id'].to_numpy())
+        self.num_samples_train_minority_class = torch.sum(self.label_data[self.train_patient_list]==1).item()
+        self.num_samples_train_majority_class = torch.sum(self.label_data[self.train_patient_list]==0).item()
+        self.num_samples_valid_minority_class = torch.sum(self.label_data[self.validate_patient_list]==1).item()
+        self.num_samples_valid_majority_class = torch.sum(self.label_data[self.validate_patient_list]==0).item()
+
         del mask_df
         
         self.edge_df = pd.read_csv(edgefile)
@@ -79,11 +84,12 @@ class DataFetch():
         node2 = [list(node_ordering.tolist()).index(value) for value in self.edge_df.loc[patient].node2]
         edge_index = torch.tensor([node1,node2], dtype=torch.long)
         edge_weight = torch.t(torch.tensor(self.edge_df.loc[patient][self.edge_features], dtype=torch.float))
-        # extract a map of the connections for plotting
-        # self.RELATIONSHIP_MAP = dict(zip(zip(node1,node2),self.edge_df.loc[patient].relationship))
         
         # create graph
-        data = torch_geometric.data.Data(x=x_static, y=y, edge_index=edge_index, edge_attr=edge_weight, directed=True)
+        if self.params['directed']=='True': 
+            data = torch_geometric.data.Data(x=x_static, y=y, edge_index=edge_index, edge_attr=edge_weight, directed=True)
+        else:
+            data = torch_geometric.data.Data(x=x_static, y=y, edge_index=edge_index, edge_attr=edge_weight, directed=False)
         data.target_index = torch.tensor(target_index)
         
         return data
