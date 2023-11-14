@@ -20,26 +20,16 @@ from sklearn.linear_model import LogisticRegression
 
 # explainability
 import explainability
+# import my_explainability as explainability
 
 # IMPORT USER-DEFINED FUNCTIONS
 from data import DataFetch, GraphData, get_batch_and_loader
 from model import GNN
-from utils import EarlyStopping, get_classification_threshold_auc, get_classification_threshold_precision_recall, brier_skill_score, calculate_metrics, enable_dropout, plot_losses
+from utils import EarlyStopping, WeightedBCELoss, get_classification_threshold_auc, get_classification_threshold_precision_recall, brier_skill_score, calculate_metrics, enable_dropout, plot_losses
 
 # DEFINE EXTRA FUNCTIONS
 
 def get_model_output(model, data_batch, params):
-    """Take an initialized model and return its ouput layer
-
-    Args:
-        model: initialized GNN model object to use
-        data_batch (torch_geometric.data.Dataset): data batch to use
-        params: user requests, loaded using argparser
-
-    Returns:
-        model_output: dictionary containing output layers
-        y: true output
-    """
     
     x                       = data_batch.x.to(params['device'])
     y                       = data_batch.y.unsqueeze(1).to(params['device'])
@@ -60,39 +50,27 @@ def get_model_output(model, data_batch, params):
 
 activation = {}
 def get_activation(name):
-    """Used to get representations learned from intermediate layers
-    """
     def hook(model, input, output):
         activation[name] = output.detach()
     return hook
 
-
 def train_model(model, train_loader, validate_loader, params):
-    """ Train the desired model
-
-    Args:
-        model (): model object to use
-        train_loader (): 
-        validate_loader ():
-        params: user requests, loaded using argparser 
-
-    Returns:
-        model_output (): 
-        y (): 
-    """
 
     model.to(params['device'])
     model_path = '{}/checkpoint_{}.pt'.format(params['outpath'], params['outname'])
     early_stopping = EarlyStopping(patience=params['patience'], path=model_path)
 
     if params['loss']=='bce':
-        train_criterion = torch.nn.BCELoss(reduction='sum')   
-        valid_criterion = torch.nn.BCELoss(reduction='sum')
+        train_criterion = torch.nn.BCEWithLogitsLoss()
+        valid_criterion = torch.nn.BCEWithLogitsLoss()
+    elif params['loss']=='weighted_bce':
+        train_criterion = WeightedBCELoss(params['num_samples_train_dataset'], params['num_samples_train_minority_class'], params['num_samples_train_majority_class'], params['device'])
+        valid_criterion = WeightedBCELoss(params['num_samples_valid_dataset'], params['num_samples_valid_minority_class'], params['num_samples_valid_majority_class'], params['device'])
     elif params['loss']=='mse':
         train_criterion = torch.nn.MSELoss(reduction='sum')      
         valid_criterion = torch.nn.MSELoss(reduction='sum')
-    
-    optimizer = torch.optim.Adam(model.parameters(), lr=params['learning_rate'])
+        
+    optimizer = torch.optim.Adam(model.parameters(), lr=params['learning_rate'], weight_decay=(params['learning_rate']/10) )
 
     train_losses = []
     valid_losses = []
@@ -131,7 +109,7 @@ def train_model(model, train_loader, validate_loader, params):
            
             loss = valid_criterion(output['output'], y) 
             epoch_valid_loss.append(loss.item())
-
+        
         # check if early stopping       
         early_stopping(np.mean(epoch_valid_loss), model)
         if early_stopping.early_stop:
@@ -158,6 +136,10 @@ def train_model(model, train_loader, validate_loader, params):
         threshold = get_classification_threshold_auc(valid_output, valid_y)
     elif params['threshold_opt']== 'precision_recall' and params['loss']=='bce':
         threshold = get_classification_threshold_precision_recall(valid_output, valid_y)
+    elif params['threshold_opt']== 'auc' and params['loss']=='weighted_bce': 
+        threshold = get_classification_threshold_auc(valid_output, valid_y)
+    elif params['threshold_opt']== 'precision_recall' and params['loss']=='weighted_bce':
+        threshold = get_classification_threshold_precision_recall(valid_output, valid_y)    
     elif params['loss']=='mse':
         threshold = None
     
@@ -165,7 +147,7 @@ def train_model(model, train_loader, validate_loader, params):
 
 def test_model(model, test_loader, threshold, params):
 
-    num_samples = 3 # number of MC samples
+    num_samples = 10 # number of MC samples
     test_output = [np.array([]) for _ in range(num_samples)]
     test_y = [np.array([]) for _ in range(num_samples)]
 
@@ -188,7 +170,7 @@ def test_model(model, test_loader, threshold, params):
     test_output = np.array(test_output).mean(axis=0)
     test_y = np.array(test_y).mean(axis=0)
     
-    if params['loss']=='bce':
+    if (params['loss']=='bce') or (params['loss']=='weighted_bce'):
         results = pd.DataFrame({'actual':test_y, 'pred_raw':test_output, 'pred_raw_se':test_output_se})
         results['pred_binary'] = (results['pred_raw']>threshold).astype(int)
         metric_results = calculate_metrics(test_y, results['pred_binary'], test_output)
@@ -218,6 +200,7 @@ if __name__ == "__main__":
     parser.add_argument('--edgefile', type=str, help='filepath for edgefile csv', default='data/edgefile.csv')
     parser.add_argument('--gnn_layer', type=str, help='type of gnn layer to use: gcn, graphconv, gat', default='graphconv')
     parser.add_argument('--use_edge', type=str, help='use or not edges in graph', default=True)
+    parser.add_argument('--directed', type=str, help='use or not edges in graph', default=True)
     parser.add_argument('--pooling_method', type=str, help='type of gnn pooling method to use: target, sum, mean, topkpool_sum, topkpool_mean, sagpool_sum, sagpool_mean', default='target')
     parser.add_argument('--num_workers', type=int, help='number of workers for data loaders', default=6)
     parser.add_argument('--max_epochs', type=int, help='maximum number of training epochs if early stopping criteria not met', default=100)
@@ -248,6 +231,7 @@ if __name__ == "__main__":
     params = {'model_type':args['model_type'],
             'mask_target':args['mask_target'],
             'use_edge':args['use_edge'],
+            'directed':args['directed'],
             'gnn_layer':args['gnn_layer'],
             'pooling_method':args['pooling_method'],
             'outpath':args['outpath'],
@@ -288,10 +272,14 @@ if __name__ == "__main__":
     train_patient_list = fetch_data.train_patient_list
     params['num_batches_train'] = int(np.ceil(len(train_patient_list)/params['batchsize']))
     params['num_samples_train_dataset'] = len(fetch_data.train_patient_list)
+    params['num_samples_train_minority_class'] = fetch_data.num_samples_train_minority_class
+    params['num_samples_train_majority_class'] = fetch_data.num_samples_train_majority_class
 
     validate_patient_list = fetch_data.validate_patient_list
     params['num_batches_validate'] = int(np.ceil(len(validate_patient_list)/params['batchsize']))
     params['num_samples_valid_dataset'] = len(fetch_data.validate_patient_list)
+    params['num_samples_valid_minority_class'] = fetch_data.num_samples_valid_minority_class
+    params['num_samples_valid_majority_class'] = fetch_data.num_samples_valid_majority_class
 
     test_patient_list = fetch_data.test_patient_list
     params['num_batches_test'] = int(np.ceil(len(test_patient_list)/params['batchsize']))
@@ -322,8 +310,11 @@ if __name__ == "__main__":
         stats = pd.read_csv(stats_path)
         threshold = float(stats[stats['name']=='threshold']['value'])
         # select graphs to explain
-        samples = explainability.sampling(results, num_positive_samples=params['num_positive_samples'], uncertainty_rate=0.8)
-        exp_patient_list = test_patient_list[samples]
+        if params['num_positive_samples']=='all':
+            exp_patient_list = test_patient_list
+        else: 
+            samples = explainability.sampling(results, num_positive_samples=params['num_positive_samples'], uncertainty_rate=0.8)
+            exp_patient_list = test_patient_list[samples]
         
         # load one graph at a time
         params['batchsize'] = 1
@@ -360,6 +351,7 @@ if __name__ == "__main__":
 
         # model testing
         results, metric_results = test_model(model, test_loader, threshold, params)
+        results['target_id'] = test_patient_list
         results.to_csv(results_path, index=None)
         params.update(metric_results)
         stats = pd.DataFrame({'name':list(params.keys()), 'value':list(params.values())})
