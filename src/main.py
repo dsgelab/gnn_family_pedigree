@@ -12,6 +12,7 @@ import pandas as pd
 # model 
 import argparse
 import torch
+import optuna
 
 # output analysis 
 from sklearn import metrics
@@ -53,6 +54,73 @@ def get_activation(name):
     def hook(model, input, output):
         activation[name] = output.detach()
     return hook
+
+
+
+
+# Define the objective tuning function for Optuna
+def hyperparameter_tuning(train_loader, valid_loader, params, trial):
+    
+    learning_rate = trial.suggest_float('learning_rate', 1e-5, 1e-1, log=True)
+    dropout_rate = trial.suggest_float('dropout_rate', 0.2, 0.5)
+    hidden_dim = trial.suggest_int('hidden_dim', 16, 64)
+    hidden_layers = trial.suggest_int('hidden_layers', 1, 3)
+    
+    model = GNN(
+        num_features_static_graph   = params['num_features_static'], 
+        hidden_dim                  = hidden_dim,
+        hidden_layers               = hidden_layers,
+        gnn_layer                   = params['gnn_layer'], 
+        pooling_method              = params['pooling_method'], 
+        dropout_rate                = dropout_rate, 
+        ratio                       = params['ratio'])
+        
+    model.to(params['device'])
+
+    if params['loss']=='bce':
+        train_criterion = torch.nn.BCEWithLogitsLoss()
+        valid_criterion = torch.nn.BCEWithLogitsLoss()
+    elif params['loss']=='weighted_bce':
+        train_criterion = WeightedBCELoss(params['num_samples_train_dataset'], params['num_samples_train_minority_class'], params['num_samples_train_majority_class'], params['device'])
+        valid_criterion = WeightedBCELoss(params['num_samples_valid_dataset'], params['num_samples_valid_minority_class'], params['num_samples_valid_majority_class'], params['device'])
+    elif params['loss']=='mse':
+        train_criterion = torch.nn.MSELoss(reduction='sum')      
+        valid_criterion = torch.nn.MSELoss(reduction='sum')
+        
+    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=(params['learning_rate']/10) )
+    
+    # evaluate model on train set
+    for epoch in range(5): 
+        model.train()
+        for train_batch in tqdm(train_loader, total=params['num_batches_train']):
+            output, y = get_model_output(model, train_batch, params)
+            loss = train_criterion(output['output'], y) 
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+        
+    # evaluate on validation set
+    valid_output = np.array([])
+    valid_y = np.array([])
+    epoch_valid_loss = []
+    model.eval()
+    
+    for validate_batch in tqdm(validate_loader, total=params['num_batches_validate']):
+        output, y = get_model_output(model, validate_batch, params)
+        valid_output = np.concatenate((valid_output, output['output'].reshape(-1).detach().cpu().numpy()))
+        valid_y = np.concatenate((valid_y, y.reshape(-1).detach().cpu().numpy()))
+        loss = valid_criterion(output['output'], y) 
+        epoch_valid_loss.append(loss.item())
+        
+    # final result     
+    val_loss = np.mean(epoch_valid_loss)
+    print('learning_rate, dropout_rate, hidden_dim, hidden_layers')
+    print(learning_rate, dropout_rate, hidden_dim, hidden_layers)
+    print('validation loss: ',val_loss)
+
+    return val_loss
+
+
 
 def train_model(model, train_loader, validate_loader, params):
 
@@ -207,6 +275,7 @@ if __name__ == "__main__":
     parser.add_argument('--patience', type=int, help='how many epochs to wait for early stopping after last time validation loss improved', default=8)
     parser.add_argument('--learning_rate', type=float, help='learning rate for model training', default=0.001)
     parser.add_argument('--hidden_dim', type=int, help='number of hidden dimensions in (non-LSTM) neural network layers', default=20)
+    parser.add_argument('--hidden_layers', type=int, help='number of hidden layers after input layer in the network ', default=1)
     parser.add_argument('--loss', type=str, help='which loss function to use: bce_weighted_single, bce_weighted_sum', default='bce_weighted_single')
     parser.add_argument('--gamma', type=float, help='weight parameter on the overall NN loss (required for bce_weighted_sum loss)', default=1)
     parser.add_argument('--alpha', type=float, help='weight parameter on the target term of the loss (required for bce_weighted_sum loss)', default=1)
@@ -219,6 +288,7 @@ if __name__ == "__main__":
     # extra parameters used for experiments presented in paper - in general these can be ignored
     parser.add_argument('--num_positive_samples', type=int, help='number of case samples from test set used in explainability analysis', default=5000)
     parser.add_argument('--explainability_mode', action='store_true', help='explainability flag for running the post-training analysis')
+    parser.add_argument('--tuning_mode', action='store_true', help='hyperparameter tuning flag')
     parser.add_argument('--explainer_input', type=str, help='optional explainability input file')
     parser.add_argument('--device', type=str, help='specific device to use, e.g. cuda:1, if not given detects gpu or cpu automatically', default='na')
 
@@ -242,6 +312,7 @@ if __name__ == "__main__":
             'patience':args['patience'],
             'learning_rate':args['learning_rate'],
             'hidden_dim':args['hidden_dim'],
+            'hidden_layers':args['hidden_layers'],
             'loss':args['loss'], 
             'gamma':args['gamma'], 
             'alpha':args['alpha'], 
@@ -293,11 +364,11 @@ if __name__ == "__main__":
     model = GNN(
         num_features_static_graph   = params['num_features_static'], 
         hidden_dim                  = params['hidden_dim'], 
+        hidden_layers               = params['hidden_layers'],
         gnn_layer                   = params['gnn_layer'], 
         pooling_method              = params['pooling_method'], 
         dropout_rate                = params['dropout_rate'], 
-        ratio                       = params['ratio'],
-        loss                        = params['loss'])
+        ratio                       = params['ratio'])
 
     model_path = '{}/{}_model.pth'.format(params['outpath'], params['outname'])
     results_path = '{}/{}_results.csv'.format(params['outpath'], params['outname'])
@@ -331,6 +402,17 @@ if __name__ == "__main__":
         model.to(params['device'])
         torch.backends.cudnn.enabled = False
         explainability.gnn_explainer(model, exp_loader, exp_patient_list, params, threshold)
+    
+    elif params['tuning_mode']:
+        
+        # Create an Optuna study and optimize the objective function
+        study = optuna.create_study(direction='minimize')
+        study.optimize(hyperparameter_tuning, n_trials=50)
+        
+        # Get the best hyperparameters
+        best_params = study.best_params
+        print("Best Hyperparameters:", best_params)
+
         
     else:
         # normal training model
