@@ -11,7 +11,6 @@ featfile=/data/projects/project_GNN/gnn_family_pedigree/data/extended_corr02/fea
 model_type=explainability
 num_positive_samples=1000
 
-model_type=graph
 gnn_layer=gcn
 use_edge=False
 mask_target=True
