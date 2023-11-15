@@ -1,6 +1,6 @@
 
 # activate virtual environment
-source /data/projects/project_GNN/envs/graphml/bin/activate
+source /data/projects/project_GNN/gnn_family_pedigree/env/bin/activate
 
 python data/scripts/extract_study_population.py > logs/log_study_pop.txt
 python data/scripts/extract_edge_onlyparents.py > logs/log_edges.txt

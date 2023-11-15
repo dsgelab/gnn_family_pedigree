@@ -1,5 +1,5 @@
 # activate virtual environment
-source /data/projects/project_GNN/envs/graphml/bin/activate
+source /data/projects/project_GNN/gnn_family_pedigree/env/bin/activate
 
 statfile=/data/projects/project_GNN/gnn_family_pedigree/data/statfile.csv
 maskfile=/data/projects/project_GNN/gnn_family_pedigree/data/maskfile.csv

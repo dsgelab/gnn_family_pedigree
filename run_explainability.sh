@@ -1,4 +1,4 @@
-source /data/projects/project_GNN/envs/graphml/bin/activate
+source /data/projects/project_GNN/gnn_family_pedigree/env/bin/activate
 
 outpath=output/results_test_4
 experiment=chd_EndPt_undir
