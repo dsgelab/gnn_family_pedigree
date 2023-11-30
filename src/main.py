@@ -61,10 +61,10 @@ def get_activation(name):
 # Define the objective tuning function for Optuna
 def hyperparameter_tuning(trial, train_loader, validate_loader, params):
     
-    learning_rate = trial.suggest_float('learning_rate', 1e-5, 1e-1, log=True)
-    dropout_rate = trial.suggest_float('dropout_rate', 0.2, 0.5)
-    hidden_dim = trial.suggest_int('hidden_dim', 16, 64)
-    hidden_layers = trial.suggest_int('hidden_layers', 1, 3)
+    learning_rate = trial.suggest_float('learning_rate', 0.0001, 0.01, log=True)
+    dropout_rate = trial.suggest_float('dropout_rate', 0.2, 0.5, step=0.1)
+    hidden_dim = trial.suggest_int('hidden_dim', 16, 128, step=16)
+    hidden_layers = trial.suggest_int('hidden_layers', 1, 3, step=1)
     
     model = GNN(
         num_features_static_graph   = params['num_features_static'], 
@@ -92,12 +92,13 @@ def hyperparameter_tuning(trial, train_loader, validate_loader, params):
     # evaluate model on train set
     for epoch in range(5): 
         model.train()
-        for train_batch in tqdm(train_loader, total=params['num_batches_train']):
+        for train_batch in train_loader:
             output, y = get_model_output(model, train_batch, params)
             loss = train_criterion(output['output'], y) 
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
+        print("completed epoch {}".format(epoch))
         
     # evaluate on validation set
     valid_output = np.array([])
@@ -105,7 +106,7 @@ def hyperparameter_tuning(trial, train_loader, validate_loader, params):
     epoch_valid_loss = []
     model.eval()
     
-    for validate_batch in tqdm(validate_loader, total=params['num_batches_validate']):
+    for validate_batch in validate_loader:
         output, y = get_model_output(model, validate_batch, params)
         valid_output = np.concatenate((valid_output, output['output'].reshape(-1).detach().cpu().numpy()))
         valid_y = np.concatenate((valid_y, y.reshape(-1).detach().cpu().numpy()))
@@ -157,20 +158,22 @@ def train_model(model, train_loader, validate_loader, params):
         # evaluate model on train set
         model.train()
         epoch_train_loss = []   
-        for train_batch in tqdm(train_loader, total=params['num_batches_train']):
-            output, y = get_model_output(model, train_batch, params)
-
+        
+        for train_batch in train_loader:
             loss = train_criterion(output['output'], y) 
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-
+            
             epoch_train_loss.append(loss.item())
+            
+        print("completed epoch {}".format(epoch))
         
         # evaluate on validation set
         model.eval()
         epoch_valid_loss = []
-        for validate_batch in tqdm(validate_loader, total=params['num_batches_validate']):
+        
+        for validate_batch in validate_loader:
             output, y = get_model_output(model, validate_batch, params)
             valid_output = np.concatenate((valid_output, output['output'].reshape(-1).detach().cpu().numpy()))
             valid_y = np.concatenate((valid_y, y.reshape(-1).detach().cpu().numpy()))
@@ -225,7 +228,7 @@ def test_model(model, test_loader, threshold, params):
 
     for sample in range(num_samples):
         counter = 0
-        for test_batch in tqdm(test_loader, total=params['num_batches_test']):
+        for test_batch in test_loader:
             output, y = get_model_output(model, test_batch, params)
             test_output[sample] = np.concatenate((test_output[sample], output['output'].reshape(-1).detach().cpu().numpy()))
             test_y[sample] = np.concatenate((test_y[sample], y.reshape(-1).detach().cpu().numpy()))
