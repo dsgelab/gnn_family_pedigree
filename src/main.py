@@ -20,8 +20,8 @@ from sklearn.metrics import matthews_corrcoef, confusion_matrix
 from sklearn.linear_model import LogisticRegression
 
 # explainability
-import explainability
-# import my_explainability as explainability
+# import explainability
+import my_explainability as explainability
 
 # IMPORT USER-DEFINED FUNCTIONS
 from data import DataFetch, GraphData, get_batch_and_loader
@@ -59,7 +59,7 @@ def get_activation(name):
 
 
 # Define the objective tuning function for Optuna
-def hyperparameter_tuning(train_loader, valid_loader, params, trial):
+def hyperparameter_tuning(trial, train_loader, validate_loader, params):
     
     learning_rate = trial.suggest_float('learning_rate', 1e-5, 1e-1, log=True)
     dropout_rate = trial.suggest_float('dropout_rate', 0.2, 0.5)
@@ -321,6 +321,7 @@ if __name__ == "__main__":
             'dropout_rate':args['dropout_rate'], 
             'threshold_opt':args['threshold_opt'], 
             'ratio':args['ratio'], 
+            'tuning_mode':args['tuning_mode'],
             'explainability_mode':args['explainability_mode'], 
             'explainer_input':args['explainer_input'],
             'device_specification':args['device'],
@@ -407,7 +408,7 @@ if __name__ == "__main__":
         
         # Create an Optuna study and optimize the objective function
         study = optuna.create_study(direction='minimize')
-        study.optimize(hyperparameter_tuning, n_trials=50)
+        study.optimize(lambda trial: hyperparameter_tuning(trial, train_loader, validate_loader, params), n_trials=50)
         
         # Get the best hyperparameters
         best_params = study.best_params

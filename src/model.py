@@ -37,7 +37,7 @@ class GNN(torch.nn.Module):
     def forward(self, x, edge_index, edge_weight=None, batch=None, target_index=None):
 
         gnn_out = self.silu(self.conv1(x, edge_index, edge_weight))
-        for i in range(hidden_layers)
+        for i in range(self.hidden_layers):
             gnn_out = self.silu(self.conv2(gnn_out, edge_index, edge_weight))
         
         if self.pooling_method=='target':
