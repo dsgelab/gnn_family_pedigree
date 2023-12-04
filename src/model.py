@@ -6,11 +6,10 @@ from math import floor
 
 
 class GNN(torch.nn.Module):
-    def __init__(self, num_features_static_graph, gnn_layer, pooling_method, dropout_rate, ratio, hidden_dim, hidden_layers):
+    def __init__(self, num_features_static_graph, gnn_layer, pooling_method, dropout_rate, ratio, hidden_dim, hidden_dim_2, hidden_layers):
         super().__init__()
         self.pooling_method = pooling_method
         self.hidden_layers = hidden_layers
-        half_hidden_dim = floor(hidden_dim/2)
 
         # which gnn layer to use is specified by input argument
         if gnn_layer=='gcn':
@@ -26,8 +25,8 @@ class GNN(torch.nn.Module):
             self.conv1 = gnn.GATConv(num_features_static_graph, hidden_dim, add_self_loops=False)
             self.conv2 = gnn.GATConv(hidden_dim, hidden_dim, add_self_loops=False)
 
-        self.pre_final_linear = nn.Linear(hidden_dim,half_hidden_dim)
-        self.final_linear = nn.Linear(half_hidden_dim, 1)
+        self.pre_final_linear = nn.Linear(hidden_dim,hidden_dim_2)
+        self.final_linear = nn.Linear(hidden_dim_2, 1)
         
         self.relu = nn.ReLU()
         self.silu = nn.SiLU()

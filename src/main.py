@@ -61,17 +61,20 @@ def get_activation(name):
 # Define the objective tuning function for Optuna
 def hyperparameter_tuning(trial, train_loader, validate_loader, params):
     
-    learning_rate = trial.suggest_float('learning_rate', 0.0001, 0.01, log=True)
-    dropout_rate = trial.suggest_float('dropout_rate', 0.2, 0.5, step=0.1)
-    hidden_dim = trial.suggest_int('hidden_dim', 16, 128, step=16)
+    learning_rate = 0.0001
+    pooling_method = trial.suggest_categorical("pooling_method", ["sum", "mean"])
+    dropout_rate = trial.suggest_float('dropout_rate', 0.1, 0.5, step=0.1)
+    hidden_dim = trial.suggest_int('hidden_dim', 32, 512, step=32)
+    hidden_dim_2 = trial.suggest_int('hidden_dim_2', 32, 512, step=32)
     hidden_layers = trial.suggest_int('hidden_layers', 1, 3, step=1)
     
     model = GNN(
         num_features_static_graph   = params['num_features_static'], 
         hidden_dim                  = hidden_dim,
+        hidden_dim_2                = hidden_dim_2,
         hidden_layers               = hidden_layers,
         gnn_layer                   = params['gnn_layer'], 
-        pooling_method              = params['pooling_method'], 
+        pooling_method              = pooling_method, 
         dropout_rate                = dropout_rate, 
         ratio                       = params['ratio'])
         
@@ -115,8 +118,8 @@ def hyperparameter_tuning(trial, train_loader, validate_loader, params):
         
     # final result     
     val_loss = np.mean(epoch_valid_loss)
-    print('learning_rate, dropout_rate, hidden_dim, hidden_layers')
-    print(learning_rate, dropout_rate, hidden_dim, hidden_layers)
+    print('learning_rate, dropout_rate, hidden_dim, hidden_dim_2, hidden_layers, pooling_method')
+    print(learning_rate, dropout_rate, hidden_dim, hidden_dim_2, hidden_layers, pooling_method)
     print('validation loss: ',val_loss)
 
     return val_loss
@@ -368,6 +371,7 @@ if __name__ == "__main__":
     model = GNN(
         num_features_static_graph   = params['num_features_static'], 
         hidden_dim                  = params['hidden_dim'], 
+        hidden_dim_2                = params['hidden_dim'],
         hidden_layers               = params['hidden_layers'],
         gnn_layer                   = params['gnn_layer'], 
         pooling_method              = params['pooling_method'], 
