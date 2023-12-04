@@ -15,6 +15,7 @@ Can we “impute” a phenotype by knowing nothing about the target individual a
     pipeline_data.sh 
     pipeline_model.sh 
     run_explainability.sh 
+    run_tuning.sh
 
     |--- data/
         statfile.csv
@@ -75,6 +76,7 @@ plus the shell pipelines used:
 - pipeline_data.sh &emsp;&emsp;&emsp;: used for extracting the study population and create the GNN input files
 - pipeline_models.sh &emsp;&nbsp;&nbsp;&nbsp;: used for training and testing the desired models
 - run_explainability.sh &emsp;: used for extracting the GNNExpaliner results on the desired model
+- run_tuning.sh &emsp;&emsp;&emsp;&emsp;: used for performing the hyperparameter finetuning (using Optuna package)
 
 
 # REFERENCES
