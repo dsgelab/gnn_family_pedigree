@@ -163,6 +163,7 @@ def train_model(model, train_loader, validate_loader, params):
         epoch_train_loss = []   
         
         for train_batch in train_loader:
+            output, y = get_model_output(model, train_batch, params)
             loss = train_criterion(output['output'], y) 
             optimizer.zero_grad()
             loss.backward()
