@@ -60,9 +60,12 @@ def get_activation(name):
 
 # Define the objective tuning function for Optuna
 def hyperparameter_tuning(trial, train_loader, validate_loader, params):
-    
-    learning_rate = 0.0001
-    pooling_method = trial.suggest_categorical("pooling_method", ["sum", "mean"])
+
+    learning_rate = trial.suggest_float('learning_rate', 1e-5, 1e-3, log=True)
+    self_loops = trial.suggest_categorical("self_loops", [True, False])
+    ratio = trial.suggest_float('ratio', 0.1, 0.9, step=0.1)
+    gnn_layer = trial.suggest_categorical("gnn_layer", ["gcn", "graphconv" , "gat"])
+    pooling_method = trial.suggest_categorical("pooling_method", ["sum", "mean","topkpool_sum","topkpool_mean","sagpool_sum","sagpool_mean"])
     dropout_rate = trial.suggest_float('dropout_rate', 0.1, 0.5, step=0.1)
     hidden_dim = trial.suggest_int('hidden_dim', 32, 512, step=32)
     hidden_dim_2 = trial.suggest_int('hidden_dim_2', 32, 512, step=32)
@@ -73,10 +76,11 @@ def hyperparameter_tuning(trial, train_loader, validate_loader, params):
         hidden_dim                  = hidden_dim,
         hidden_dim_2                = hidden_dim_2,
         hidden_layers               = hidden_layers,
-        gnn_layer                   = params['gnn_layer'], 
+        gnn_layer                   = gnn_layer, 
         pooling_method              = pooling_method, 
         dropout_rate                = dropout_rate, 
-        ratio                       = params['ratio'])
+        ratio                       = ratio,
+        self_loops                  = self_loops )
         
     model.to(params['device'])
 
@@ -118,9 +122,8 @@ def hyperparameter_tuning(trial, train_loader, validate_loader, params):
         
     # final result     
     val_loss = np.mean(epoch_valid_loss)
-    print('learning_rate, dropout_rate, hidden_dim, hidden_dim_2, hidden_layers, pooling_method')
-    print(learning_rate, dropout_rate, hidden_dim, hidden_dim_2, hidden_layers, pooling_method)
-    print('validation loss: ',val_loss)
+    print('learning_rate, dropout_rate, ratio, hidden_dim, hidden_dim_2, hidden_layers, gnn_layer, self_loops, pooling_method')
+    print(learning_rate, dropout_rate, ratio, hidden_dim, hidden_dim_2, hidden_layers, gnn_layer, self_loops, pooling_method)
 
     return val_loss
 
@@ -275,6 +278,7 @@ if __name__ == "__main__":
     parser.add_argument('--edgefile', type=str, help='filepath for edgefile csv', default='data/edgefile.csv')
     parser.add_argument('--gnn_layer', type=str, help='type of gnn layer to use: gcn, graphconv, gat', default='graphconv')
     parser.add_argument('--use_edge', type=str, help='use or not edges in graph', default=True)
+    parser.add_argument('--add_self_loops', type=str, help='use or not self loops in graph', default=False)
     parser.add_argument('--directed', type=str, help='use or not edges in graph', default=True)
     parser.add_argument('--pooling_method', type=str, help='type of gnn pooling method to use: target, sum, mean, topkpool_sum, topkpool_mean, sagpool_sum, sagpool_mean', default='target')
     parser.add_argument('--num_workers', type=int, help='number of workers for data loaders', default=6)
@@ -308,6 +312,7 @@ if __name__ == "__main__":
     params = {'model_type':args['model_type'],
             'mask_target':args['mask_target'],
             'use_edge':args['use_edge'],
+            'add_self_loops':args['add_self_loops'],
             'directed':args['directed'],
             'gnn_layer':args['gnn_layer'],
             'pooling_method':args['pooling_method'],
@@ -377,7 +382,8 @@ if __name__ == "__main__":
         gnn_layer                   = params['gnn_layer'], 
         pooling_method              = params['pooling_method'], 
         dropout_rate                = params['dropout_rate'], 
-        ratio                       = params['ratio'])
+        ratio                       = params['ratio'],
+        self_loops                  = params['add_self_loops'])
 
     model_path = '{}/{}_model.pth'.format(params['outpath'], params['outname'])
     results_path = '{}/{}_results.csv'.format(params['outpath'], params['outname'])
@@ -413,10 +419,15 @@ if __name__ == "__main__":
         explainability.gnn_explainer(model, exp_loader, exp_patient_list, params, threshold)
     
     elif params['tuning_mode']:
+        # free up memory no longer needed
+        del fetch_data 
+        del train_dataset
+        del validate_dataset
+        del test_dataset
         
         # Create an Optuna study and optimize the objective function
         study = optuna.create_study(direction='minimize')
-        study.optimize(lambda trial: hyperparameter_tuning(trial, train_loader, validate_loader, params), n_trials=50)
+        study.optimize(lambda trial: hyperparameter_tuning(trial, train_loader, validate_loader, params), n_trials=100)
         
         # Get the best hyperparameters
         best_params = study.best_params
