@@ -47,15 +47,13 @@ class WeightedBCELoss(torch.nn.Module):
     def __init__(self, num_samples_dataset, num_samples_minority_class, num_samples_majority_class, device):
         super(WeightedBCELoss,self).__init__()
         self.num_samples_dataset = num_samples_dataset
-        self.num_samples_minority_class = num_samples_minority_class
-        self.num_samples_majority_class = num_samples_majority_class
+        self.total_positive_samples = num_samples_minority_class
+        self.total_negative_samples = num_samples_majority_class
         self.device = device
 
     def forward(self, y_est, y):
-        weight_minority = self.num_samples_dataset / self.num_samples_minority_class
-        weight_majority = self.num_samples_dataset / self.num_samples_majority_class
-        class_weights = torch.tensor([[weight_minority] if i==1 else [weight_majority] for i in y]).to(self.device)
-        bce_loss = torch.nn.BCEWithLogitsLoss(weight=class_weights)
+        positive_weight = torch.tensor(self.total_negative_samples/self.total_positive_samples).to(self.device)
+        bce_loss = torch.nn.BCEWithLogitsLoss(pos_weight=positive_weight)
         weighted_bce_loss = bce_loss(y_est, y)
         return weighted_bce_loss
 
@@ -107,7 +105,7 @@ def calculate_metrics(actual_y, predicted_y, predicted_prob_y):
         'false_negatives':fn, 
         'true_positives':tp}
        
-    return metric_results
+    return metric_results 
 
 
 def plot_losses(train_losses, valid_losses, outprefix):
