@@ -61,7 +61,7 @@ def get_activation(name):
 # Define the objective tuning function for Optuna
 def hyperparameter_tuning(trial, train_loader, validate_loader, params):
 
-    learning_rate = trial.suggest_float('learning_rate', 1e-5, 1e-3, log=True)
+    learning_rate = 0.0001
     self_loops = trial.suggest_categorical("self_loops", [True, False])
     ratio = trial.suggest_float('ratio', 0.1, 0.9, step=0.1)
     gnn_layer = trial.suggest_categorical("gnn_layer", ["gcn", "graphconv" , "gat"])
@@ -105,7 +105,7 @@ def hyperparameter_tuning(trial, train_loader, validate_loader, params):
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-        print("completed epoch {}".format(epoch))
+        print("completed epoch {}, with loss: {}".format(epoch,torch.round(loss,2)))
         
     # evaluate on validation set
     valid_output = np.array([])
@@ -427,7 +427,7 @@ if __name__ == "__main__":
         
         # Create an Optuna study and optimize the objective function
         study = optuna.create_study(direction='minimize')
-        study.optimize(lambda trial: hyperparameter_tuning(trial, train_loader, validate_loader, params), n_trials=100)
+        study.optimize(lambda trial: hyperparameter_tuning(trial, train_loader, validate_loader, params), n_trials=50)
         
         # Get the best hyperparameters
         best_params = study.best_params
