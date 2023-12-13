@@ -26,6 +26,7 @@ class DataFetch():
         stat_df = pd.read_csv(statfile)
         self.label_data     = torch.tensor(stat_df[self.label_key].to_numpy(), dtype=torch.float)
         self.static_data    = torch.tensor(stat_df[self.static_features].values, dtype=torch.float)
+        self.static_medians = torch.median(self.static_data, dim=0).values
         del stat_df
         
         mask_df = pd.read_csv(maskfile)
@@ -58,10 +59,11 @@ class DataFetch():
         x_static = all_x_static[node_indices]
         y = all_y[list(all_relatives.tolist()).index(patient)] 
 
-        # mask target patient with vector of all -1
+        # mask target patient
         target_index = node_ordering.tolist().index(patient)
         if self.params['mask_target']=='True': 
-            x_static[target_index] = torch.full( (1,len(self.static_features)),-1)
+            # impute median calculated on the overall population
+            x_static[target_index] = self.static_medians.unsqueeze(0)
 
         # extract edge informations
         node1 = [list(node_ordering.tolist()).index(value) for value in self.edge_df.loc[patient].node1]
