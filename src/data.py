@@ -9,95 +9,123 @@ from torch_geometric.loader import DataLoader
 import pandas as pd
 import numpy as np
 from random import choices
+import multiprocessing
+
+
+GRAPH_NODE_STRUCTURE = {
+  # 0:'target',
+  1:'father',
+  2:'mother',
+  3:'paternal_grandfather',
+  4:'paternal_grandmother',
+  5:'maternal_grandfather',
+  6:'maternal_grandmother',
+  7:'paternal_aunt_or_uncle',
+  8:'maternal_aunt_or_uncle',
+  9:'paternal_cousin',
+  10:'maternal_cousin',
+  11:'sibling_full',
+  12:'sibling_half',
+  13:'spouse',
+  14:'offspring'
+}
+N_RELATIONSHIPS = len(GRAPH_NODE_STRUCTURE)
+
 
 class DataFetch():
 
-    def __init__(self, maskfile, featfile, statfile, edgefile, params):
-
+    def __init__(self, maskfile, featfile, statfile, params):
         self.params = params 
-
+        
         feat_df = pd.read_csv(featfile)
         self.label_key              = feat_df[feat_df['type']=='label']['name'].tolist()[0]        
         self.static_features        = feat_df[feat_df['type']=='static']['name'].tolist()
         self.edge_features          = feat_df[feat_df['type']=='edge']['name'].tolist()
         #NB: some gnn layers only support a single edge weight
         del feat_df
-
-        stat_df = pd.read_csv(statfile)
-        self.label_data     = torch.tensor(stat_df[self.label_key].to_numpy(), dtype=torch.float)
-        self.static_data    = torch.tensor(stat_df[self.static_features].values, dtype=torch.float)
-        self.static_medians = torch.median(self.static_data, dim=0).values
-        del stat_df
         
+        self.stat_df = pd.read_csv(statfile, index_col='target_node_id')
+        # HACK: build masked target row for future
+        self.zeros_array = np.zeros((1, len(self.static_features)))
+
         mask_df = pd.read_csv(maskfile)
         self.train_patient_list               = torch.tensor(mask_df[mask_df['train']==0]['node_id'].to_numpy())
         self.validate_patient_list            = torch.tensor(mask_df[mask_df['train']==1]['node_id'].to_numpy())
         self.test_patient_list                = torch.tensor(mask_df[mask_df['train']==2]['node_id'].to_numpy())
-        self.num_samples_train_minority_class = torch.sum(self.label_data[self.train_patient_list]==1).item()
-        self.num_samples_train_majority_class = torch.sum(self.label_data[self.train_patient_list]==0).item()
-        self.num_samples_valid_minority_class = torch.sum(self.label_data[self.validate_patient_list]==1).item()
-        self.num_samples_valid_majority_class = torch.sum(self.label_data[self.validate_patient_list]==0).item()
         del mask_df
         
-        self.edge_df = pd.read_csv(edgefile)
-        self.edge_df = self.edge_df.groupby('target_patient').agg(list)
+        self.num_samples_train_majority_class, self.num_samples_train_minority_class = self.stat_df[self.stat_df.train==0 & self.stat_df.relationship_detail.isna()][self.label_key].value_counts().values
+        self.num_samples_valid_majority_class, self.num_samples_valid_minority_class = self.stat_df[self.stat_df.train==1 & self.stat_df.relationship_detail.isna()][self.label_key].value_counts().values
+
         
-    def get_static_data(self, patients):
-        x_static = self.static_data[patients]
-        y = self.label_data[patients]
-        return x_static, y
-
-    def get_relatives(self, patients):
-        nodes_included = torch.tensor(list(set([i for list in self.edge_df.loc[patients]['node1'].to_list() for i in list] + [i for list in self.edge_df.loc[patients]['node2'].to_list() for i in list])))      
-        return nodes_included
-
-    def construct_patient_graph(self, patient, all_relatives, all_x_static, all_y):
-      
-        # get nodes and get indices in all_relatives to retrieve feature data
-        node_ordering = np.asarray(list(set(self.edge_df.loc[patient].node1 + self.edge_df.loc[patient].node2)))
-        node_indices = [list(all_relatives.tolist()).index(value) for value in node_ordering]
-        x_static = all_x_static[node_indices]
-        y = all_y[list(all_relatives.tolist()).index(patient)] 
-
-        # mask target patient
-        target_index = node_ordering.tolist().index(patient)
+    def construct_patient_graph(self, patient):
+        
+        # extract target patient info
+        static_subset = self.stat_df.loc[patient,self.static_features+['relationship_detail']]
+        label_subset = self.stat_df.loc[patient,[self.label_key]+['relationship_detail']]
+        
         if self.params['mask_target']=='True': 
-            # impute median calculated on the overall population
-            x_static[target_index] = self.static_medians.unsqueeze(0)
+            x_static = self.zeros_array
+        else:
+            x_static = static_subset[static_subset.relationship_detail.isna()][self.static_features].values
+        y = label_subset[label_subset.relationship_detail.isna()][self.label_key].values
+        
+        # build graph and calculate aggregated features for clusters
+        aggregated_data_list = []
+        static_subset_values = static_subset.values
+        if self.params['aggr_func']=='mean':  
+            aggr_func=np.mean
+        elif self.params['aggr_func']=='min':  
+            aggr_func=np.min
+        elif self.params['aggr_func']=='max':  
+            aggr_func=np.max
+        
+        for relationship in GRAPH_NODE_STRUCTURE.values():
+            # this code works only if relationship_detail is the last column
+            relationship_data = static_subset_values[static_subset_values[:, -1] == relationship][:, :-1]
+            # if cluster is empty create ghost node with no info
+            if relationship_data.size!=0:
+                aggr_data = np.array([np.apply_along_axis(aggr_func, axis=0, arr=relationship_data)])
+                aggregated_data_list.append(aggr_data)
+            else:
+                aggregated_data_list.append(self.zeros_array)
+        
+        aggregated_data = np.concatenate(aggregated_data_list, axis=0)
+        x_static = np.concatenate([x_static, aggregated_data], axis=0)
+        
+        # construct pytorch tensors
+        x_static = torch.tensor(x_static, dtype=torch.float)
+        y = torch.tensor(y, dtype=torch.float)
 
-        # extract edge informations
-        node1 = [list(node_ordering.tolist()).index(value) for value in self.edge_df.loc[patient].node1]
-        node2 = [list(node_ordering.tolist()).index(value) for value in self.edge_df.loc[patient].node2]
-        edge_index = torch.tensor([node1,node2], dtype=torch.long)
-        edge_weight = torch.t(torch.tensor(self.edge_df.loc[patient][self.edge_features], dtype=torch.float))
+        # build edge connections
+        # look at GRAPH_NODE_STRUCTURE for more info
+        edges = [[1,0],[2,0],[3,1],[4,1],[5,2],[6,2],[7,1],[9,7],[8,2],[10,8],[11,0],[12,0],[13,0],[14,0]]
+        edge_index = torch.tensor(edges, dtype=torch.long).t().contiguous()
         
         # create graph
         if self.params['directed']=='True': 
-            data = torch_geometric.data.Data(x=x_static, y=y, edge_index=edge_index, edge_attr=edge_weight, directed=True)
+            data = torch_geometric.data.Data(x=x_static, y=y, edge_index=edge_index, directed=True)
         else:
-            data = torch_geometric.data.Data(x=x_static, y=y, edge_index=edge_index, edge_attr=edge_weight, directed=False)
-        data.target_index = torch.tensor(target_index)
+            data = torch_geometric.data.Data(x=x_static, y=y, edge_index=edge_index, directed=False)
+        data.target_index = 0
         
         return data
 
 class GraphData(GraphDataset):
 
-    def __init__(self, patient_list, fetch_data):
+    def __init__(self, patient_list, fetch_data, params):
         self.patient_list = patient_list
         self.num_target_patients = len(patient_list)
         self.fetch_data = fetch_data
 
+          
     def __getitem__(self, patients):
         # returns multiple patient graphs by constructing a pytorch geometric Batch object
         batch_patient_list = self.patient_list[patients]
         data_list = []
 
-        #NB: it's more efficient to fetch feature data for all patients and their relatives, and then split into separate graphs
-        all_relatives           = self.fetch_data.get_relatives(batch_patient_list)
-        all_x_static, all_y     = self.fetch_data.get_static_data(all_relatives)
-
         for patient in batch_patient_list:
-            patient_graph = self.fetch_data.construct_patient_graph(patient.item(), all_relatives, all_x_static, all_y)
+            patient_graph = self.fetch_data.construct_patient_graph(patient.item())
             data_list.append(patient_graph)
 
         batch_data = Batch.from_data_list(data_list)
@@ -107,9 +135,9 @@ class GraphData(GraphDataset):
         return self.num_target_patients
 
 
-def get_batch_and_loader(patient_list, fetch_data, params, shuffle=True):
+def get_batch_and_loader(patient_list, fetch_data, params, shuffle=False):
     
-    dataset = GraphData(patient_list, fetch_data)
+    dataset = GraphData(patient_list, fetch_data, params)
 
     if shuffle:
         sample_order = sampler.RandomSampler(dataset)
@@ -121,6 +149,7 @@ def get_batch_and_loader(patient_list, fetch_data, params, shuffle=True):
         batch_size=params['batchsize'],
         drop_last=False)
 
-    loader = DataLoader(dataset, sampler=Sampler, num_workers=params['num_workers'])
+    loader = DataLoader(dataset, sampler=Sampler)
     return dataset, loader
+
 

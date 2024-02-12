@@ -19,10 +19,6 @@ from sklearn import metrics
 from sklearn.metrics import matthews_corrcoef, confusion_matrix
 from sklearn.linear_model import LogisticRegression
 
-# explainability
-# import explainability
-import my_explainability as explainability
-
 # IMPORT USER-DEFINED FUNCTIONS
 from data import DataFetch, GraphData, get_batch_and_loader
 from model import GNN
@@ -35,15 +31,11 @@ def get_model_output(model, data_batch, params):
     x                       = data_batch.x.to(params['device'])
     y                       = data_batch.y.unsqueeze(1).to(params['device'])
     edge_index              = data_batch.edge_index.to(params['device'])
-    edge_weight             = data_batch.edge_attr.to(params['device'])
     batch                   = data_batch.batch.to(params['device'])
     target_index            = data_batch.target_index.to(params['device'])
 
     # look in forward() in model.py for model architecture
-    if params['use_edge']=='True':
-        output = model(x, edge_index, edge_weight, batch, target_index)
-    else:
-        output = model(x, edge_index, None, batch, target_index)
+    output = model(x, edge_index, batch, target_index)
     model_output = {'output':output}
 
     return model_output, y
@@ -60,19 +52,20 @@ def get_activation(name):
 
 # Define the objective tuning function for Optuna
 def hyperparameter_tuning(trial, train_loader, validate_loader, params):
-
-    learning_rate = 0.0001
-    self_loops = trial.suggest_categorical("self_loops", [True, False])
-    ratio = trial.suggest_float('ratio', 0.1, 0.9, step=0.1)
-    gnn_layer = trial.suggest_categorical("gnn_layer", ["gcn", "graphconv" , "gat"])
-    pooling_method = trial.suggest_categorical("pooling_method", ["sum", "mean","topkpool_sum","topkpool_mean","sagpool_sum","sagpool_mean"])
+    
+    num_features_static_graph = params['num_features_static']
+    learning_rate = params['learning_rate']
+    self_loops = params['add_self_loops']
+    ratio = params['ratio']
+    gnn_layer = params['gnn_layer']
+    pooling_method = params['pooling_method']
     dropout_rate = trial.suggest_float('dropout_rate', 0.1, 0.5, step=0.1)
     hidden_dim = trial.suggest_int('hidden_dim', 32, 512, step=32)
     hidden_dim_2 = trial.suggest_int('hidden_dim_2', 32, 512, step=32)
     hidden_layers = trial.suggest_int('hidden_layers', 1, 3, step=1)
     
     model = GNN(
-        num_features_static_graph   = params['num_features_static'], 
+        num_features_static_graph   = num_features_static_graph, 
         hidden_dim                  = hidden_dim,
         hidden_dim_2                = hidden_dim_2,
         hidden_layers               = hidden_layers,
@@ -94,10 +87,11 @@ def hyperparameter_tuning(trial, train_loader, validate_loader, params):
         train_criterion = torch.nn.MSELoss(reduction='sum')      
         valid_criterion = torch.nn.MSELoss(reduction='sum')
         
-    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=(params['learning_rate']/10) )
-    
+    optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate, momentum=0.9)
+    scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=learning_rate, max_lr=learning_rate*10, step_size_up=500, step_size_down=500, mode='exp_range', gamma=0.1, cycle_momentum=True)
+
     # evaluate model on train set
-    for epoch in range(5): 
+    for epoch in range(10): 
         model.train()
         for train_batch in train_loader:
             output, y = get_model_output(model, train_batch, params)
@@ -105,7 +99,8 @@ def hyperparameter_tuning(trial, train_loader, validate_loader, params):
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-        print("completed epoch {}, with loss: {}".format(epoch,torch.round(loss,2)))
+            scheduler.step()
+        print("completed epoch {}, with loss: {}".format(epoch,torch.round(loss,decimals=3)))
         
     # evaluate on validation set
     valid_output = np.array([])
@@ -275,8 +270,8 @@ if __name__ == "__main__":
     parser.add_argument('--statfile', type=str, help='filepath for statfile csv', default='data/statfile.csv')
     parser.add_argument('--mask_target', type=str, help='mask target patient info', default=True)
     parser.add_argument('--maskfile', type=str, help='filepath for maskfile csv', default='True')
-    parser.add_argument('--edgefile', type=str, help='filepath for edgefile csv', default='data/edgefile.csv')
     parser.add_argument('--gnn_layer', type=str, help='type of gnn layer to use: gcn, graphconv, gat', default='graphconv')
+    parser.add_argument('--aggr_func', type=str, help='function used to aggreagte the family clusters', default='mean')
     parser.add_argument('--use_edge', type=str, help='use or not edges in graph', default=True)
     parser.add_argument('--add_self_loops', type=str, help='use or not self loops in graph', default=False)
     parser.add_argument('--directed', type=str, help='use or not edges in graph', default=True)
@@ -307,14 +302,14 @@ if __name__ == "__main__":
 
     filepaths = {'maskfile':args['maskfile'],
                 'featfile':args['featfile'],
-                'statfile':args['statfile'], 
-                'edgefile':args['edgefile']}
+                'statfile':args['statfile']}
     params = {'model_type':args['model_type'],
             'mask_target':args['mask_target'],
             'use_edge':args['use_edge'],
             'add_self_loops':args['add_self_loops'],
             'directed':args['directed'],
             'gnn_layer':args['gnn_layer'],
+            'aggr_func':args['aggr_func'],
             'pooling_method':args['pooling_method'],
             'outpath':args['outpath'],
             'outname':args['experiment'],
@@ -350,7 +345,6 @@ if __name__ == "__main__":
         maskfile=filepaths['maskfile'], 
         featfile=filepaths['featfile'], 
         statfile=filepaths['statfile'], 
-        edgefile=filepaths['edgefile'], 
         params=params)
     
     train_patient_list = fetch_data.train_patient_list
@@ -369,8 +363,8 @@ if __name__ == "__main__":
     params['num_batches_test'] = int(np.ceil(len(test_patient_list)/params['batchsize']))
 
     print('STARTING BATCH PREPARATION')
-    train_dataset, train_loader = get_batch_and_loader(train_patient_list, fetch_data, params, shuffle=True)
-    validate_dataset, validate_loader = get_batch_and_loader(validate_patient_list, fetch_data, params, shuffle=True)
+    train_dataset, train_loader = get_batch_and_loader(train_patient_list, fetch_data, params, shuffle=False)
+    validate_dataset, validate_loader = get_batch_and_loader(validate_patient_list, fetch_data, params, shuffle=False)
     test_dataset, test_loader = get_batch_and_loader(test_patient_list, fetch_data, params, shuffle=False)
     params['num_features_static'] = len(fetch_data.static_features)
     
@@ -427,7 +421,7 @@ if __name__ == "__main__":
         
         # Create an Optuna study and optimize the objective function
         study = optuna.create_study(direction='minimize')
-        study.optimize(lambda trial: hyperparameter_tuning(trial, train_loader, validate_loader, params), n_trials=50)
+        study.optimize(lambda trial: hyperparameter_tuning(trial, train_loader, validate_loader, params), n_trials=10)
         
         # Get the best hyperparameters
         best_params = study.best_params

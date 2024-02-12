@@ -36,11 +36,11 @@ class GNN(torch.nn.Module):
         self.sigmoid = nn.Sigmoid()
         self.dropout = nn.Dropout(dropout_rate)
         
-    def forward(self, x, edge_index, edge_weight=None, batch=None, target_index=None):
+    def forward(self, x, edge_index, batch=None, target_index=None):
 
-        gnn_out = self.silu(self.conv1(x, edge_index, edge_weight))
+        gnn_out = self.silu(self.conv1(x, edge_index))
         for i in range(self.hidden_layers):
-            gnn_out = self.silu(self.conv2(gnn_out, edge_index, edge_weight))
+            gnn_out = self.silu(self.conv2(gnn_out, edge_index))
         
         if self.pooling_method=='target':
             out = gnn_out[target_index] 
@@ -49,16 +49,16 @@ class GNN(torch.nn.Module):
         elif self.pooling_method=='mean':
             out = gnn.global_mean_pool(gnn_out, batch)
         elif self.pooling_method=='topkpool_sum':
-            out, _, _, pool_batch, _, _ = self.TopKpool(gnn_out, edge_index, edge_weight, batch)
+            out, _, _, pool_batch, _, _ = self.TopKpool(gnn_out, edge_index, batch)
             out = gnn.global_add_pool(out, pool_batch)
         elif self.pooling_method=='topkpool_mean':
-            out, _, _, pool_batch, _, _ = self.TopKpool(gnn_out, edge_index, edge_weight, batch)
+            out, _, _, pool_batch, _, _ = self.TopKpool(gnn_out, edge_index, batch)
             out = gnn.global_mean_pool(out, pool_batch)
         elif self.pooling_method=='sagpool_sum':
-            out, _, _, pool_batch, _, _ = self.SAGpool(gnn_out, edge_index, edge_weight, batch)
+            out, _, _, pool_batch, _, _ = self.SAGpool(gnn_out, edge_index, batch)
             out = gnn.global_add_pool(out, pool_batch)
         elif self.pooling_method=='sagpool_mean':
-            out, _, _, pool_batch, _, _ = self.SAGpool(gnn_out, edge_index, edge_weight, batch)
+            out, _, _, pool_batch, _, _ = self.SAGpool(gnn_out, edge_index, batch)
             out = gnn.global_mean_pool(out, pool_batch)  
             
         out = self.dropout(out)  
