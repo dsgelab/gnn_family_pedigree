@@ -140,7 +140,8 @@ def train_model(model, train_loader, validate_loader, params):
         train_criterion = torch.nn.MSELoss(reduction='sum')      
         valid_criterion = torch.nn.MSELoss(reduction='sum')
         
-    optimizer = torch.optim.Adam(model.parameters(), lr=params['learning_rate'], weight_decay=(params['learning_rate']/10) )
+    optimizer = torch.optim.Adam(model.parameters(), lr=params['learning_rate'], weight_decay=(params['learning_rate']/100))
+    scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=params['learning_rate'], max_lr=params['learning_rate']*10, mode='triangular2', cycle_momentum=False)
 
     train_losses = []
     valid_losses = []
@@ -166,6 +167,7 @@ def train_model(model, train_loader, validate_loader, params):
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
+            scheduler.step()
             
             epoch_train_loss.append(loss.item())
             
