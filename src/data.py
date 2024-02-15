@@ -96,12 +96,12 @@ class GraphData(GraphDataset):
             patient_data[patient_data.relationship_detail==0] == self.fetch_data.masked_target
         # create ghost nodes if relationship cluster is missing, then sort
         new_rows=[]
-        for i in GRAPH_NODE_STRUCTURE.values():
-            if i not in patient_data.relationship_detail:              
-                new_row = self.fetch_data.masked_target
-                new_row[self.fetch_data.col_idx] = int(i)
-                new_rows.append(new_row)             
-        if new_rows: 
+        if patient_data.shape[0]!=N_RELATIONSHIPS:
+            for i in GRAPH_NODE_STRUCTURE.values():
+                if i not in patient_data.relationship_detail:              
+                    new_row = self.fetch_data.masked_target
+                    new_row[self.fetch_data.col_idx] = int(i)
+                    new_rows.append(new_row)             
             patient_data = pd.concat([patient_data,pd.DataFrame(new_rows, columns=patient_data.columns)], ignore_index=True)
         patient_data = patient_data.sort_values(by='relationship_detail').reset_index(drop=True)
         # construct pytorch tensors
