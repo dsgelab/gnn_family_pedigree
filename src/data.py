@@ -43,22 +43,25 @@ class DataFetch():
         #NB: some gnn layers only support a single edge weight
         del feat_df
         
-        stat_df = pd.read_csv(statfile)
-        stat_df = stat_df[stat_df.relationship_detail!='sibling_unknown']
-        stat_df.loc[stat_df.relationship_detail.isna(),'relationship_detail'] = 'target'       
-        stat_df.relationship_detail = stat_df.relationship_detail.map(GRAPH_NODE_STRUCTURE).astype(int)
+        self.stat_df = pd.read_csv(statfile)
+        self.stat_df = self.stat_df[self.stat_df.relationship_detail!='sibling_unknown']
+        self.stat_df.loc[self.stat_df.relationship_detail.isna(),'relationship_detail'] = 'target'       
+        self.stat_df.relationship_detail = self.stat_df.relationship_detail.map(GRAPH_NODE_STRUCTURE).astype(int)
         print('loaded statfile, aggregating relationship cliusters')
         t = time.time()
         if params['aggr_func']=='max':
-            stat_df = stat_df.groupby(['target_node_id', 'relationship_detail']).max().reset_index()
+            self.stat_df = self.stat_df.groupby(['target_node_id', 'relationship_detail']).max().reset_index()
         elif params['aggr_func']=='min':
-            stat_df = stat_df.groupby(['target_node_id', 'relationship_detail']).min().reset_index()
+            self.stat_df = self.stat_df.groupby(['target_node_id', 'relationship_detail']).min().reset_index()
         elif params['aggr_func']=='sum':
-            stat_df = stat_df.groupby(['target_node_id', 'relationship_detail']).sum().reset_index()
+            self.stat_df = self.stat_df.groupby(['target_node_id', 'relationship_detail']).sum().reset_index()
         elif params['aggr_func']=='mean':
-            stat_df = stat_df.groupby(['target_node_id', 'relationship_detail']).mean().reset_index()
-        self.stat_df = stat_df.set_index('target_node_id')
+            self.stat_df = self.stat_df.groupby(['target_node_id', 'relationship_detail']).mean().reset_index()
+        self.stat_df = self.stat_df.set_index('target_node_id')
         print('completed in '+str(time.time()-t))
+        # prepare extra info
+        self.masked_target = np.zeros(len(self.stat_df.columns))
+        self.col_idx = self.stat_df.columns.get_loc('relationship_detail')
 
         mask_df = pd.read_csv(maskfile)
         self.train_patient_list               = torch.tensor(mask_df[mask_df['train']==0]['node_id'].to_numpy())
@@ -90,13 +93,16 @@ class GraphData(GraphDataset):
     def construct_patient_graph(self, patient):
         patient_data = self.fetch_data.stat_df.loc[patient]
         if self.mask_target==True: 
-            patient_data[patient_data.relationship_detail==0] == np.zeros((1, len(patient_data.columns)))
+            patient_data[patient_data.relationship_detail==0] == self.fetch_data.masked_target
         # create ghost nodes if relationship cluster is missing, then sort
-        for i in list(GRAPH_NODE_STRUCTURE.values()):
-            if i not in patient_data.relationship_detail.tolist():
-                new_row = pd.DataFrame(np.zeros((1, len(patient_data.columns))),columns=patient_data.columns)
-                new_row.relationship_detail = int(i)
-                patient_data = pd.concat([patient_data, new_row], ignore_index=True)
+        new_rows=[]
+        for i in GRAPH_NODE_STRUCTURE.values():
+            if i not in patient_data.relationship_detail:              
+                new_row = self.fetch_data.masked_target
+                new_row[self.fetch_data.col_idx] = int(i)
+                new_rows.append(new_row)             
+        if new_rows: 
+            patient_data = pd.concat([patient_data,pd.DataFrame(new_rows, columns=patient_data.columns)], ignore_index=True)
         patient_data = patient_data.sort_values(by='relationship_detail').reset_index(drop=True)
         # construct pytorch tensors
         x_static = torch.tensor(patient_data[self.static_features].values, dtype=torch.float)
