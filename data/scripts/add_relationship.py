@@ -49,10 +49,20 @@ extra = df.merge(relatives,left_on='FINREGISTRYID',right_on='ID2',how='inner').d
 df['target_id'] = df.FINREGISTRYID
 df['relationship_detail'] = ''
 df = pd.concat([df, extra])
-
+        
 # map to node ids and sort
 df['target_node_id'] = df.target_id.map(node_mapping)
 df = df.sort_values(by=['node_id'])
+
+# fix relationship detail for model
+df = df[df.relationship_detail!='sibling_unknown']
+df.loc[df.relationship_detail=='','relationship_detail'] = 'target'     
+
+# standardize continuous variables
+from sklearn.preprocessing import MinMaxScaler
+scaler = MinMaxScaler()
+columns_to_scale = ['birth_year','I9_CHD_nEvent']
+df[columns_to_scale] = scaler.fit_transform(df[columns_to_scale])
 
 # save results
 df.to_csv(OUTPUT_PATH,index=False)

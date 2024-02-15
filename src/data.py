@@ -44,8 +44,6 @@ class DataFetch():
         del feat_df
         
         self.stat_df = pd.read_csv(statfile)
-        self.stat_df = self.stat_df[self.stat_df.relationship_detail!='sibling_unknown']
-        self.stat_df.loc[self.stat_df.relationship_detail.isna(),'relationship_detail'] = 'target'       
         self.stat_df.relationship_detail = self.stat_df.relationship_detail.map(GRAPH_NODE_STRUCTURE).astype(int)
         print('loaded statfile, aggregating relationship cliusters')
         t = time.time()
