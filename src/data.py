@@ -29,7 +29,7 @@ GRAPH_NODE_STRUCTURE = {
     'offspring': 14
 }
 N_RELATIONSHIPS = len(GRAPH_NODE_STRUCTURE)
-
+RELATIONSHIPS_SET = set(GRAPH_NODE_STRUCTURE.values())
 
 class DataFetch():
 
@@ -58,9 +58,10 @@ class DataFetch():
         elif params['aggr_func']=='mean':
             self.stat_df = self.stat_df.groupby(['target_node_id', 'relationship_detail']).mean().reset_index()
         self.stat_df = self.stat_df.set_index('target_node_id')
-        print('completed in '+str(time.time()-t))
+        print('completed in '+str(time.time()-t)+'seconds')
         # prepare extra info
         self.masked_target = np.zeros(len(self.stat_df.columns))
+        self.N_COLS = self.stat_df.shape[1]
         self.col_idx = self.stat_df.columns.get_loc('relationship_detail')
 
         mask_df = pd.read_csv(maskfile)
@@ -97,11 +98,9 @@ class GraphData(GraphDataset):
         # create ghost nodes if relationship cluster is missing, then sort
         new_rows=[]
         if patient_data.shape[0]!=N_RELATIONSHIPS:
-            for i in GRAPH_NODE_STRUCTURE.values():
-                if i not in patient_data.relationship_detail:              
-                    new_row = self.fetch_data.masked_target
-                    new_row[self.fetch_data.col_idx] = int(i)
-                    new_rows.append(new_row)             
+            current_set = set(patient_data.relationship_detail.tolist())
+            new_rows = np.zeros( (N_RELATIONSHIPS-len(current_set), self.fetch_data.N_COLS) ) 
+            new_rows[:,self.fetch_data.col_idx] = np.array(list(RELATIONSHIPS_SET - current_set))
             patient_data = pd.concat([patient_data,pd.DataFrame(new_rows, columns=patient_data.columns)], ignore_index=True)
         patient_data = patient_data.sort_values(by='relationship_detail').reset_index(drop=True)
         # construct pytorch tensors
