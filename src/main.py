@@ -283,6 +283,7 @@ if __name__ == "__main__":
     parser.add_argument('--patience', type=int, help='how many epochs to wait for early stopping after last time validation loss improved', default=8)
     parser.add_argument('--learning_rate', type=float, help='learning rate for model training', default=0.001)
     parser.add_argument('--hidden_dim', type=int, help='number of hidden dimensions in (non-LSTM) neural network layers', default=20)
+    parser.add_argument('--hidden_dim_2', type=int, help='number of hidden dimensions in (non-LSTM) neural network layers', default=20)
     parser.add_argument('--hidden_layers', type=int, help='number of hidden layers after input layer in the network ', default=1)
     parser.add_argument('--loss', type=str, help='which loss function to use: bce_weighted_single, bce_weighted_sum', default='bce_weighted_single')
     parser.add_argument('--gamma', type=float, help='weight parameter on the overall NN loss (required for bce_weighted_sum loss)', default=1)
@@ -321,6 +322,7 @@ if __name__ == "__main__":
             'patience':args['patience'],
             'learning_rate':args['learning_rate'],
             'hidden_dim':args['hidden_dim'],
+            'hidden_dim_2':args['hidden_dim_2'],
             'hidden_layers':args['hidden_layers'],
             'loss':args['loss'], 
             'gamma':args['gamma'], 
@@ -373,7 +375,7 @@ if __name__ == "__main__":
     model = GNN(
         num_features_static_graph   = params['num_features_static'], 
         hidden_dim                  = params['hidden_dim'], 
-        hidden_dim_2                = params['hidden_dim'],
+        hidden_dim_2                = params['hidden_dim_2'],
         hidden_layers               = params['hidden_layers'],
         gnn_layer                   = params['gnn_layer'], 
         pooling_method              = params['pooling_method'], 
