@@ -44,8 +44,8 @@ class DataFetch():
         del feat_df
         
         self.stat_df = pd.read_csv(statfile)
-        self.num_samples_train_majority_class, self.num_samples_train_minority_class = self.stat_df[self.stat_df.train==0 & self.stat_df.relationship_detail=='target'][self.label_key].value_counts().values
-        self.num_samples_valid_majority_class, self.num_samples_valid_minority_class = self.stat_df[self.stat_df.train==1 & self.stat_df.relationship_detail=='target'][self.label_key].value_counts().values
+        self.num_samples_train_majority_class, self.num_samples_train_minority_class = self.stat_df[(self.stat_df.train==0) & (self.stat_df.relationship_detail=='target')][self.label_key].value_counts().values
+        self.num_samples_valid_majority_class, self.num_samples_valid_minority_class = self.stat_df[(self.stat_df.train==1) & (self.stat_df.relationship_detail=='target')][self.label_key].value_counts().values
 
         self.stat_df.relationship_detail = self.stat_df.relationship_detail.map(GRAPH_NODE_STRUCTURE).astype(int)
         print('loaded statfile, aggregating relationship cliusters')
