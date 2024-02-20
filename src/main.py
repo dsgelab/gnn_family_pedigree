@@ -195,7 +195,7 @@ def train_model(model, train_loader, validate_loader, params):
         valid_losses.append(np.mean(epoch_valid_loss))
         for term_name in separate_loss_terms:
             separate_loss_terms[term_name].append(np.mean(separate_loss_terms_epoch[term_name]))
-        print("epoch {}\ttrain loss : {}\tvalidate loss : {}".format(epoch, np.mean(epoch_train_loss), np.mean(epoch_valid_loss)))
+        print("epoch {}\ttrain loss : {}\tvalidate loss : {}".format(epoch, np.mean(epoch_train_loss), np.mean(epoch_valid_loss)),flush=True)
 
     # STOP TRAINING
     #-----------------------------------------------------
