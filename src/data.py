@@ -43,13 +43,15 @@ class DataFetch():
         #NB: some gnn layers only support a single edge weight
         del feat_df
         
-        self.stat_df = pd.read_csv(statfile)
-        self.num_samples_train_majority_class, self.num_samples_train_minority_class = self.stat_df[(self.stat_df.train==0) & (self.stat_df.relationship_detail=='target')][self.label_key].value_counts().values
-        self.num_samples_valid_majority_class, self.num_samples_valid_minority_class = self.stat_df[(self.stat_df.train==1) & (self.stat_df.relationship_detail=='target')][self.label_key].value_counts().values
-
+        extra_cols=['train','target_node_id','relationship_detail']
+        self.stat_df = pd.read_csv(statfile, usecols=self.static_features+[self.label_key]+extra_cols)
         self.stat_df.relationship_detail = self.stat_df.relationship_detail.map(GRAPH_NODE_STRUCTURE).astype(int)
-        print('loaded statfile, aggregating relationship cliusters')
-        t = time.time()
+
+        # extract info for weighted loss function
+        self.num_samples_train_majority_class, self.num_samples_train_minority_class = self.stat_df[(self.stat_df.train==0) & (self.stat_df.relationship_detail==0)][self.label_key].value_counts().values
+        self.num_samples_valid_majority_class, self.num_samples_valid_minority_class = self.stat_df[(self.stat_df.train==1) & (self.stat_df.relationship_detail==0)][self.label_key].value_counts().values
+
+        # aggregating based on relatives' clusters
         if params['aggr_func']=='max':
             self.stat_df = self.stat_df.groupby(['target_node_id', 'relationship_detail']).max().reset_index()
         elif params['aggr_func']=='min':
@@ -58,12 +60,11 @@ class DataFetch():
             self.stat_df = self.stat_df.groupby(['target_node_id', 'relationship_detail']).sum().reset_index()
         elif params['aggr_func']=='mean':
             self.stat_df = self.stat_df.groupby(['target_node_id', 'relationship_detail']).mean().reset_index()
-        self.stat_df = self.stat_df.set_index('target_node_id')
-        print('completed in '+str(time.time()-t)+'seconds')
-        # prepare extra info
-        self.masked_target = np.zeros(len(self.stat_df.columns))
+        
+        self.stat_df = self.stat_df.set_index('target_node_id').drop(columns='train')
         self.N_COLS = self.stat_df.shape[1]
         self.col_idx = self.stat_df.columns.get_loc('relationship_detail')
+        self.masked_target = self.stat_df.median().values
 
         mask_df = pd.read_csv(maskfile)
         self.train_patient_list               = torch.tensor(mask_df[mask_df['train']==0]['node_id'].to_numpy())
@@ -97,7 +98,7 @@ class GraphData(GraphDataset):
         new_rows=[]
         if patient_data.shape[0]!=N_RELATIONSHIPS:
             current_set = set(patient_data.relationship_detail.tolist())
-            new_rows = np.zeros( (N_RELATIONSHIPS-len(current_set), self.fetch_data.N_COLS) ) 
+            new_rows = np.tile(self.fetch_data.masked_target, (N_RELATIONSHIPS-len(current_set),1))
             new_rows[:,self.fetch_data.col_idx] = np.array(list(RELATIONSHIPS_SET - current_set))
             patient_data = pd.concat([patient_data,pd.DataFrame(new_rows, columns=patient_data.columns)], ignore_index=True)
         patient_data = patient_data.sort_values(by='relationship_detail').reset_index(drop=True)
