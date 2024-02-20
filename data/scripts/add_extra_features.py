@@ -8,15 +8,16 @@ import gc
 import os
 import time
 
+STATFILE = '/data/projects/project_GNN/GAT_family_pedigree/data/statfile_with_relationships.csv'
+OUTPUT_FILE = '/data/projects/project_GNN/GAT_family_pedigree/data/statfile_chd_all.csv'
+
 # prepare files
 print('FETCHING DATA')
-statfile = pd.read_csv(
-    filepath_or_buffer = '/data/projects/project_GNN/gnn_family_pedigree/data/statfile_nokids.csv', 
-    usecols = ['FINREGISTRYID','node_id','birth_year','sex','I9_CHD_nEvent','CHD_binary'])
-statfile = statfile[['FINREGISTRYID','node_id','birth_year','sex','I9_CHD_nEvent','CHD_binary']]
 
-# add endpoint label
-# LABEL_COLS = ['CHD_binary','T2D_binary','ASTHMA_binary','DEPRESSION_binary','COL_CANC_binary'] 
+vars_statfile = ['FINREGISTRYID','train','relationship_detail','target_node_id','birth_year','sex','I9_CHD_nEvent_binary']
+statfile = pd.read_csv(
+    filepath_or_buffer = STATFILE, 
+    usecols = vars_statfile)
 
 # download extra feature names 
 extra_SES = pd.read_csv("/data/projects/project_GNN/Indep0.2/SES",header=None)[0].tolist()
@@ -33,8 +34,7 @@ extra_all = extra_SES + extra_Drug + extra_EndPt
 print('prepearing estended statfile headers')
 
 # all 3
-OUTPUT_FILE = '/data/projects/project_GNN/gnn_family_pedigree/data/nokids_extended/statfile_chd_all.csv'
-output_columns = ['FINREGISTRYID','node_id','birth_year','sex','I9_CHD_nEvent','CHD_binary'] + extra_all
+output_columns = vars_statfile + extra_all
 output_columns[output_columns.index('247_psychiatric_residential_care')] = 'psychiatric_residential_care'
 output_columns[output_columns.index('247_residential_care_housing_under_65yo')] = 'residential_care_housing_under_65yo'
 output = pd.DataFrame(columns=output_columns)
@@ -44,7 +44,6 @@ output.to_csv(OUTPUT_FILE, mode='w', index=False)
 #-----------------------------
 print('appending to extendended ALL')
 
-OUTPUT_FILE = '/data/projects/project_GNN/gnn_family_pedigree/data/nokids_extended/statfile_chd_all.csv'
 FILE_SES_FEATURES = "/data/projects/project_GNN/AllIndFeat"
 FILE_DRUG_FEATURES = "/data/projects/project_GNN/AgeInput/FullMat_Age.Drug"
 FILE_ENDPOINT_FEATURES = "/data/projects/project_GNN/AgeInput/FullMat_Age.EndPt"
@@ -69,12 +68,10 @@ print('start data sorting')
 
 df = pd.read_csv(OUTPUT_FILE)
 df = df.sort_values(by='node_id')
-df.to_csv(OUTPUT_FILE,index=None)
 
 #-----------------------------
 print('start fix missing values in SES')
 
-df = pd.read_csv(OUTPUT_FILE)
 columns_to_fill = df.columns[df.isnull().sum()!=0] 
 for column in columns_to_fill:
     median_value = df[column].median()
