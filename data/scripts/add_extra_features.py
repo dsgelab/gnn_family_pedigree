@@ -14,7 +14,7 @@ OUTPUT_FILE = '/data/projects/project_GNN/GAT_family_pedigree/data/statfile_chd_
 # prepare files
 print('FETCHING DATA')
 
-vars_statfile = ['FINREGISTRYID','train','relationship_detail','target_node_id','birth_year','sex','I9_CHD_nEvent_binary']
+vars_statfile = ['FINREGISTRYID','sex','birth_year','train','I9_CHD_nEvent_binary','relationship_detail','target_node_id']
 statfile = pd.read_csv(
     filepath_or_buffer = STATFILE, 
     usecols = vars_statfile)
@@ -23,6 +23,11 @@ statfile = pd.read_csv(
 extra_SES = pd.read_csv("/data/projects/project_GNN/Indep0.2/SES",header=None)[0].tolist()
 extra_Drug = pd.read_csv("/data/projects/project_GNN/Indep0.2/Drug",header=None)[0].tolist()
 extra_EndPt = pd.read_csv("/data/projects/project_GNN/Indep0.2/EndPt",header=None)[0].tolist()
+
+print('adding the following number of features:')
+print(str(len(extra_SES))+' SES variables')
+print(str(len(extra_Drug))+' Drug variables')
+print(str(len(extra_EndPt))+' Endpoint variables')
 
 # update names
 extra_Drug = [el+'_OnsetAge' for el in extra_Drug] 
@@ -44,7 +49,7 @@ output.to_csv(OUTPUT_FILE, mode='w', index=False)
 #-----------------------------
 print('appending to extendended ALL')
 
-FILE_SES_FEATURES = "/data/projects/project_GNN/AllIndFeat"
+FILE_SES_FEATURES = "/data/projects/project_GNN/feature_matrices/AllSampleMat-noTimeLim.SES"
 FILE_DRUG_FEATURES = "/data/projects/project_GNN/AgeInput/FullMat_Age.Drug"
 FILE_ENDPOINT_FEATURES = "/data/projects/project_GNN/AgeInput/FullMat_Age.EndPt"
 
@@ -64,14 +69,9 @@ print(time.time()-start)
 
 
 #-----------------------------
-print('start data sorting')
-
-df = pd.read_csv(OUTPUT_FILE)
-df = df.sort_values(by='node_id')
-
-#-----------------------------
 print('start fix missing values in SES')
 
+df = pd.read_csv(OUTPUT_FILE)
 columns_to_fill = df.columns[df.isnull().sum()!=0] 
 for column in columns_to_fill:
     median_value = df[column].median()
