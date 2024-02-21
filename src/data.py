@@ -44,6 +44,8 @@ class DataFetch():
         del feat_df
         
         extra_cols=['train','target_node_id','relationship_detail']
+        self.static_features = [str(el) for el in self.static_features]
+        if 'nan' in self.static_features: self.static_features.remove('nan')
         self.stat_df = pd.read_csv(statfile, usecols=self.static_features+[self.label_key]+extra_cols)
         self.stat_df.relationship_detail = self.stat_df.relationship_detail.map(GRAPH_NODE_STRUCTURE).astype(int)
 
