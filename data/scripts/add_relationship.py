@@ -64,6 +64,9 @@ scaler = MinMaxScaler()
 columns_to_scale = ['birth_year','I9_CHD_nEvent']
 df[columns_to_scale] = scaler.fit_transform(df[columns_to_scale])
 
+# drop duplicates
+df = df.drop_duplicates()
+
 # save results
 df.to_csv(OUTPUT_PATH,index=False)
 
