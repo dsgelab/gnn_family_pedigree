@@ -31,6 +31,13 @@ GRAPH_NODE_STRUCTURE = {
 N_RELATIONSHIPS = len(GRAPH_NODE_STRUCTURE)
 RELATIONSHIPS_SET = set(GRAPH_NODE_STRUCTURE.values())
 
+def QC_features(features):
+    features = [str(el) for el in features]
+    if 'nan' in features: features.remove('nan')
+    return features
+
+
+
 class DataFetch():
 
     def __init__(self, maskfile, featfile, statfile, params):
@@ -39,13 +46,12 @@ class DataFetch():
         feat_df = pd.read_csv(featfile)
         self.label_key              = feat_df[feat_df['type']=='label']['name'].tolist()[0]        
         self.static_features        = feat_df[feat_df['type']=='static']['name'].tolist()
+        self.static_features        = QC_features(self.static_features)
         self.edge_features          = feat_df[feat_df['type']=='edge']['name'].tolist()
         #NB: some gnn layers only support a single edge weight
         del feat_df
         
         extra_cols=['train','target_node_id','relationship_detail']
-        self.static_features = [str(el) for el in self.static_features]
-        if 'nan' in self.static_features: self.static_features.remove('nan')
         self.stat_df = pd.read_csv(statfile, usecols=self.static_features+[self.label_key]+extra_cols)
         self.stat_df.relationship_detail = self.stat_df.relationship_detail.map(GRAPH_NODE_STRUCTURE).astype(int)
 
@@ -93,29 +99,32 @@ class GraphData(GraphDataset):
         self.label_key = self.fetch_data.label_key
     
     def construct_patient_graph(self, patient):
-        patient_data = self.fetch_data.stat_df.loc[patient]
-        if self.mask_target==True: 
-            patient_data[patient_data.relationship_detail==0] == self.fetch_data.masked_target
-        # create ghost nodes if relationship cluster is missing, then sort
-        new_rows=[]
-        if patient_data.shape[0]!=N_RELATIONSHIPS:
-            current_set = set(patient_data.relationship_detail.tolist())
-            new_rows = np.tile(self.fetch_data.masked_target, (N_RELATIONSHIPS-len(current_set),1))
-            new_rows[:,self.fetch_data.col_idx] = np.array(list(RELATIONSHIPS_SET - current_set))
-            patient_data = pd.concat([patient_data,pd.DataFrame(new_rows, columns=patient_data.columns)], ignore_index=True)
-        patient_data = patient_data.sort_values(by='relationship_detail').reset_index(drop=True)
-        # construct pytorch tensors
-        x_static = torch.tensor(patient_data[self.static_features].values, dtype=torch.float)
-        y = torch.tensor(patient_data.loc[patient_data.relationship_detail==0,self.label_key].values, dtype=torch.float)
-        # build edge connections, look at GRAPH_NODE_STRUCTURE for more info
-        edges = [[1,0],[2,0],[3,1],[4,1],[5,2],[6,2],[7,1],[9,7],[8,2],[10,8],[11,0],[12,0],[13,0],[14,0]]
-        edge_index = torch.tensor(edges, dtype=torch.long).t().contiguous()        
-        # create torch geometric graph object
-        if self.directed==True: 
-            data = torch_geometric.data.Data(x=x_static, y=y, edge_index=edge_index, directed=True)
-        else:
-            data = torch_geometric.data.Data(x=x_static, y=y, edge_index=edge_index, directed=False)
-        data.target_index = 0       
+        if patient in self.fetch_data.stat_df.index:
+            patient_data = self.fetch_data.stat_df.loc[patient]
+            if self.mask_target==True: 
+                patient_data[patient_data.relationship_detail==0] == self.fetch_data.masked_target
+            # create ghost nodes if relationship cluster is missing, then sort
+            new_rows=[]
+            if patient_data.shape[0]!=N_RELATIONSHIPS:
+                current_set = set(patient_data.relationship_detail.tolist())
+                new_rows = np.tile(self.fetch_data.masked_target, (N_RELATIONSHIPS-len(current_set),1))
+                new_rows[:,self.fetch_data.col_idx] = np.array(list(RELATIONSHIPS_SET - current_set))
+                patient_data = pd.concat([patient_data,pd.DataFrame(new_rows, columns=patient_data.columns)], ignore_index=True)
+            patient_data = patient_data.sort_values(by='relationship_detail').reset_index(drop=True)
+            # construct pytorch tensors
+            x_static = torch.tensor(patient_data[self.static_features].values, dtype=torch.float)
+            y = torch.tensor(patient_data.loc[patient_data.relationship_detail==0,self.label_key].values, dtype=torch.float)
+            # build edge connections, look at GRAPH_NODE_STRUCTURE for more info
+            edges = [[1,0],[2,0],[3,1],[4,1],[5,2],[6,2],[7,1],[9,7],[8,2],[10,8],[11,0],[12,0],[13,0],[14,0]]
+            edge_index = torch.tensor(edges, dtype=torch.long).t().contiguous()        
+            # create torch geometric graph object
+            if self.directed==True: 
+                data = torch_geometric.data.Data(x=x_static, y=y, edge_index=edge_index, directed=True)
+            else:
+                data = torch_geometric.data.Data(x=x_static, y=y, edge_index=edge_index, directed=False)
+            data.target_index = 0       
+        else: 
+            data = torch_geometric.data.Data()
         return data
     
     def __getitem__(self, patients):
