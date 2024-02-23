@@ -8,8 +8,8 @@ import gc
 import os
 import time
 
-STATFILE = '/data/projects/project_GNN/GAT_family_pedigree/data/statfile_with_relationships.csv'
-OUTPUT_FILE = '/data/projects/project_GNN/GAT_family_pedigree/data/statfile_chd_all.csv'
+STATFILE = '/data/projects/project_GNN/GAT_family_pedigree/data/CHD/statfile_with_relationships.csv'
+OUTPUT_FILE = '/data/projects/project_GNN/GAT_family_pedigree/data/CHD/statfile_chd_all.csv'
 
 # prepare files
 print('FETCHING DATA')
@@ -49,13 +49,14 @@ output.to_csv(OUTPUT_FILE, mode='w', index=False)
 #-----------------------------
 print('appending to extendended ALL')
 
-FILE_SES_FEATURES = "/data/projects/project_GNN/feature_matrices/AllSampleMat-noTimeLim.SES"
+FILE_SES_FEATURES = "/data/projects/project_GNN/feature_matrices/AllSampleMat-noTimeLim.SES_sorted_id"
 FILE_DRUG_FEATURES = "/data/projects/project_GNN/AgeInput/FullMat_Age.Drug"
 FILE_ENDPOINT_FEATURES = "/data/projects/project_GNN/AgeInput/FullMat_Age.EndPt"
 
-reader1 = pd.read_csv(FILE_SES_FEATURES, sep=',',chunksize=100_000, usecols=['FINREGISTRYID']+extra_SES) 
-reader2 = pd.read_csv(FILE_DRUG_FEATURES, sep=',',chunksize=100_000, usecols=['FINREGISTRYID']+extra_Drug) 
-reader3 = pd.read_csv(FILE_ENDPOINT_FEATURES, sep=',',chunksize=100_000, usecols=['FINREGISTRYID']+extra_EndPt) 
+#NB: Id column needs to be sorted, every dataset row should reference the same patient 
+reader1 = pd.read_csv(FILE_SES_FEATURES, sep=',',chunksize=10_000, usecols=['FINREGISTRYID']+extra_SES) 
+reader2 = pd.read_csv(FILE_DRUG_FEATURES, sep=',',chunksize=10_000, usecols=['FINREGISTRYID']+extra_Drug) 
+reader3 = pd.read_csv(FILE_ENDPOINT_FEATURES, sep=',',chunksize=10_000, usecols=['FINREGISTRYID']+extra_EndPt) 
 
 start = time.time()
 for extra1,extra2,extra3 in zip(reader1,reader2,reader3):
