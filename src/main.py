@@ -94,8 +94,9 @@ def hyperparameter_tuning(trial, train_loader, validate_loader, params):
         train_criterion = torch.nn.MSELoss(reduction='sum')      
         valid_criterion = torch.nn.MSELoss(reduction='sum')
         
-    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=(params['learning_rate']/10) )
-    
+    optimizer = torch.optim.Adam(model.parameters(), lr=params['learning_rate'], weight_decay=(params['learning_rate']/10))
+    scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=params['learning_rate'], max_lr=params['learning_rate']*10, mode='triangular2', cycle_momentum=False)
+ 
     # evaluate model on train set
     for epoch in range(5): 
         model.train()
@@ -105,7 +106,8 @@ def hyperparameter_tuning(trial, train_loader, validate_loader, params):
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-        print("completed epoch {}, with loss: {}".format(epoch,torch.round(loss,2)))
+            scheduler.step()
+        print("completed epoch {}, with loss: {}".format(epoch,torch.round(loss)))
         
     # evaluate on validation set
     valid_output = np.array([])
@@ -145,7 +147,8 @@ def train_model(model, train_loader, validate_loader, params):
         train_criterion = torch.nn.MSELoss(reduction='sum')      
         valid_criterion = torch.nn.MSELoss(reduction='sum')
         
-    optimizer = torch.optim.Adam(model.parameters(), lr=params['learning_rate'], weight_decay=(params['learning_rate']/10) )
+    optimizer = torch.optim.Adam(model.parameters(), lr=params['learning_rate'], weight_decay=(params['learning_rate']/10))
+    scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=params['learning_rate'], max_lr=params['learning_rate']*10, mode='triangular2', cycle_momentum=False)
 
     train_losses = []
     valid_losses = []
@@ -171,6 +174,7 @@ def train_model(model, train_loader, validate_loader, params):
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
+            scheduler.step()
             
             epoch_train_loss.append(loss.item())
             
@@ -286,6 +290,7 @@ if __name__ == "__main__":
     parser.add_argument('--patience', type=int, help='how many epochs to wait for early stopping after last time validation loss improved', default=8)
     parser.add_argument('--learning_rate', type=float, help='learning rate for model training', default=0.001)
     parser.add_argument('--hidden_dim', type=int, help='number of hidden dimensions in (non-LSTM) neural network layers', default=20)
+    parser.add_argument('--hidden_dim_2', type=int, help='number of hidden dimensions in (non-LSTM) neural network layers', default=20)
     parser.add_argument('--hidden_layers', type=int, help='number of hidden layers after input layer in the network ', default=1)
     parser.add_argument('--loss', type=str, help='which loss function to use: bce_weighted_single, bce_weighted_sum', default='bce_weighted_single')
     parser.add_argument('--gamma', type=float, help='weight parameter on the overall NN loss (required for bce_weighted_sum loss)', default=1)
@@ -324,6 +329,7 @@ if __name__ == "__main__":
             'patience':args['patience'],
             'learning_rate':args['learning_rate'],
             'hidden_dim':args['hidden_dim'],
+            'hidden_dim_2':args['hidden_dim_2'],
             'hidden_layers':args['hidden_layers'],
             'loss':args['loss'], 
             'gamma':args['gamma'], 
@@ -377,7 +383,7 @@ if __name__ == "__main__":
     model = GNN(
         num_features_static_graph   = params['num_features_static'], 
         hidden_dim                  = params['hidden_dim'], 
-        hidden_dim_2                = params['hidden_dim'],
+        hidden_dim_2                = params['hidden_dim_2'],
         hidden_layers               = params['hidden_layers'],
         gnn_layer                   = params['gnn_layer'], 
         pooling_method              = params['pooling_method'], 
