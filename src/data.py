@@ -156,7 +156,7 @@ def get_batch_and_loader(patient_list, fetch_data, params, shuffle=False):
         batch_size=params['batchsize'],
         drop_last=False)
 
-    loader = DataLoader(dataset, sampler=Sampler)
+    loader = DataLoader(dataset, sampler=Sampler, num_workers=params['num_workers'])
     return dataset, loader
 
 
