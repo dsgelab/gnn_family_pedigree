@@ -341,16 +341,19 @@ if __name__ == "__main__":
     if params['device_specification'] != 'na':
         params['device'] = torch.device(params['device_specification'])
     else:
-        params['device'] = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    
+        params['device'] = torch.device('cuda' if torch.cuda.is_available() else 'cpu')   
     print('using the following device: {}'.format(params['device']))
+
     print('STARTING DATA FETCH')
+    START = time.time()
     fetch_data = DataFetch(
         maskfile=filepaths['maskfile'], 
         featfile=filepaths['featfile'], 
         statfile=filepaths['statfile'], 
         params=params)
-    
+    END = time.time()
+    params['load_data_time_min'] = (END-START)/60
+
     train_patient_list = fetch_data.train_patient_list
     params['num_batches_train'] = int(np.ceil(len(train_patient_list)/params['batchsize']))
     params['num_samples_train_dataset'] = len(fetch_data.train_patient_list)
@@ -447,10 +450,13 @@ if __name__ == "__main__":
         END = time.time()
         params['num_parameters'] = sum(p.numel() for p in model.parameters())
         params['threshold'] = threshold
-        params['training_time'] = (END-START)/60
+        params['training_time_min'] = (END-START)/60
 
         # model testing
+        START = time.time()
         results, metric_results = test_model(model, test_loader, threshold, params)
+        END = time.time()
+        params['test_time_min'] = (END-START)/60
         results['target_id'] = test_patient_list
         results.to_csv(results_path, index=None)
         params.update(metric_results)
